@@ -121,6 +121,29 @@ describe.skipIf(!configured)('Edge Functions publicadas', () => {
     expect(status).toBe(503)
     expect(res.error).toBe('IA não configurada neste ambiente.')
   })
+
+  // Espelha o secret ALLOWED_ORIGIN do nexo-teste (dev local + site de teste no Netlify).
+  const permitted = ['http://localhost:5173', 'https://zippy-biscuit-ebc7d7.netlify.app']
+  const preflight = (fn: string, origin: string) =>
+    fetch(`${URL}/functions/v1/${fn}`, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization, content-type' },
+    })
+
+  it.each(['import-transactions', 'ai-analysis'])('%s: pré-voo devolve só a origem permitida que bateu', async (fn) => {
+    for (const origin of permitted) {
+      const r = await preflight(fn, origin)
+      expect(r.status, origin).toBe(204)
+      expect(r.headers.get('access-control-allow-origin'), origin).toBe(origin)
+      expect(r.headers.get('vary') ?? '', origin).toMatch(/origin/i)
+    }
+  })
+
+  it.each(['import-transactions', 'ai-analysis'])('%s: origem fora da lista é recusada', async (fn) => {
+    const r = await preflight(fn, 'https://nao-permitida.example')
+    expect(r.status).toBe(403)
+    expect(r.headers.get('access-control-allow-origin')).toBeNull()
+  })
 })
 
 afterAll(async () => {
