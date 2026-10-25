@@ -1,13 +1,5 @@
 import { acc, cats, tx } from './testkit'
-import {
-  accountBalances,
-  delinquency,
-  monthlyEvolution,
-  payables,
-  periodSummary,
-  receivables,
-  registeredBalance,
-} from './metrics'
+import { accountBalances, delinquency, monthlyEvolution, payables, periodSummary, receivables, registeredBalance } from './metrics'
 import { BASE_SCENARIO, CONSERVATIVE_SCENARIO, projectCashflow } from './projection'
 import { DecisionError, simulate } from './simulation'
 import { detectAlerts, findSuspectedDuplicates } from './alerts'
@@ -138,7 +130,14 @@ describe('projeção de caixa', () => {
       transactions: txs,
       asOf,
       horizonDays: 30,
-      assumptions: { id: 'custom', receivableDelayDays: 0, receivableHaircutPct: 0, includeOverdueReceivables: true, overdueAssumedInDays: 5, estimatedWeeklyIncome: 0 },
+      assumptions: {
+        id: 'custom',
+        receivableDelayDays: 0,
+        receivableHaircutPct: 0,
+        includeOverdueReceivables: true,
+        overdueAssumedInDays: 5,
+        estimatedWeeklyIncome: 0,
+      },
     })
     expect(p.events.find((e) => e.originalDate === '2026-03-02')?.effectiveDate).toBe('2026-03-20')
   })
@@ -175,8 +174,7 @@ describe('simulador', () => {
   const payable = tx({ id: 'p1', kind: 'expense', amount: 12_000, status: 'pending', dueDate: '2026-03-20' })
   const receivable = tx({ id: 'r1', kind: 'income', amount: 6_000, status: 'pending', dueDate: '2026-03-18' })
   const txs = [payable, receivable]
-  const run = (decisions: Parameters<typeof simulate>[0]['decisions']) =>
-    simulate({ accounts, transactions: txs, asOf, horizonDays: 30, decisions })
+  const run = (decisions: Parameters<typeof simulate>[0]['decisions']) => simulate({ accounts, transactions: txs, asOf, horizonDays: 30, decisions })
 
   it('sem decisões, alternativo = atual', () => {
     const r = run([])
@@ -213,9 +211,7 @@ describe('simulador', () => {
   it('rejeita decisões inválidas', () => {
     expect(() => run([{ id: 'd', type: 'renegotiate', label: 'x', txId: 'r1', newDate: '2026-04-01' }])).toThrow(DecisionError)
     expect(() => run([{ id: 'd', type: 'hire', label: 'x', monthlyCost: 0, startDate: '2026-03-16' }])).toThrow(DecisionError)
-    expect(() =>
-      run([{ id: 'd', type: 'equipment', label: 'x', amount: 100, firstDate: '2026-03-16', installments: 0 }]),
-    ).toThrow(DecisionError)
+    expect(() => run([{ id: 'd', type: 'equipment', label: 'x', amount: 100, firstDate: '2026-03-16', installments: 0 }])).toThrow(DecisionError)
   })
   it('usa o mesmo motor da projeção', () => {
     const r = run([])
@@ -306,10 +302,7 @@ describe('alertas', () => {
   })
 
   it('aponta inconsistências de dados', () => {
-    const txs = [
-      tx({ kind: 'expense', amount: 1_000, categoryId: null }),
-      tx({ kind: 'expense', amount: 1_000, settledDate: '2026-04-01' }),
-    ]
+    const txs = [tx({ kind: 'expense', amount: 1_000, categoryId: null }), tx({ kind: 'expense', amount: 1_000, settledDate: '2026-04-01' })]
     const a = detectAlerts([acc()], txs, cats, asOf).alerts.find((x) => x.rule === 'data_inconsistency')!
     expect(a.transactionIds).toHaveLength(2)
     expect(a.severity).toBe('warning')

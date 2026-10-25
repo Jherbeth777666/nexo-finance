@@ -21,6 +21,7 @@ export const DEMO_COMPANY: Company = {
   timezone: 'America/Sao_Paulo',
   currency: 'BRL',
   isDemo: true,
+  role: 'owner',
 }
 
 export const DEMO_CATEGORIES: Category[] = [
@@ -185,12 +186,43 @@ export function buildDemoDataset(today: ISODate): DemoDataset {
     const on = (day: number) => addMonths(monthStart, 0).slice(0, 8) + String(day).padStart(2, '0')
     const inRange = (d: ISODate) => d >= start && d <= addDays(today, 95)
     const items: Parameters<typeof push>[0][] = [
-      { kind: 'expense', description: 'Aluguel do ponto comercial', counterparty: 'Imobiliária Monte Claro (fictícia)', amount: 480_000, date: on(5), categoryId: 'c-aluguel', recurrenceId: 'r-aluguel' },
+      {
+        kind: 'expense',
+        description: 'Aluguel do ponto comercial',
+        counterparty: 'Imobiliária Monte Claro (fictícia)',
+        amount: 480_000,
+        date: on(5),
+        categoryId: 'c-aluguel',
+        recurrenceId: 'r-aluguel',
+      },
       { kind: 'expense', description: 'Folha de pagamento', amount: 1_360_000, date: on(5), categoryId: 'c-folha', recurrenceId: 'r-folha' },
-      { kind: 'expense', description: 'Impostos — DAS Simples Nacional', amount: vary(310_000, 0.1), date: on(20), categoryId: 'c-impostos', recurrenceId: 'r-das' },
-      { kind: 'expense', description: 'Internet e telefonia', counterparty: 'Provedor Conecta (fictício)', amount: 21_990, date: on(10), categoryId: 'c-servicos', recurrenceId: 'r-internet' },
+      {
+        kind: 'expense',
+        description: 'Impostos — DAS Simples Nacional',
+        amount: vary(310_000, 0.1),
+        date: on(20),
+        categoryId: 'c-impostos',
+        recurrenceId: 'r-das',
+      },
+      {
+        kind: 'expense',
+        description: 'Internet e telefonia',
+        counterparty: 'Provedor Conecta (fictício)',
+        amount: 21_990,
+        date: on(10),
+        categoryId: 'c-servicos',
+        recurrenceId: 'r-internet',
+      },
       { kind: 'expense', description: 'Sistema de PDV — assinatura', amount: 18_900, date: on(12), categoryId: 'c-servicos', recurrenceId: 'r-pdv' },
-      { kind: 'expense', description: 'Honorários contábeis', counterparty: 'Escritório Contábil Exato (fictício)', amount: 95_000, date: on(10), categoryId: 'c-servicos', recurrenceId: 'r-contador' },
+      {
+        kind: 'expense',
+        description: 'Honorários contábeis',
+        counterparty: 'Escritório Contábil Exato (fictício)',
+        amount: 95_000,
+        date: on(10),
+        categoryId: 'c-servicos',
+        recurrenceId: 'r-contador',
+      },
       { kind: 'expense', description: 'Taxas de cartão e tarifas', amount: vary(98_000, 0.1), date: on(28), categoryId: 'c-taxas', recurrenceId: 'r-taxas' },
     ]
     for (const it of items) if (inRange(it.date)) push(it)

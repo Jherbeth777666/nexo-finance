@@ -8,6 +8,7 @@ import { AuthProvider } from '@/features/auth/session'
 const Landing = lazy(() => import('@/features/landing/LandingPage'))
 const AuthPage = lazy(() => import('@/features/auth/AuthPage'))
 const ResetPassword = lazy(() => import('@/features/auth/ResetPasswordPage'))
+const Invite = lazy(() => import('@/features/invites/InvitePage'))
 const AppShell = lazy(() => import('@/app/AppShell'))
 const Overview = lazy(() => import('@/features/overview/OverviewPage'))
 const Transactions = lazy(() => import('@/features/transactions/TransactionsPage'))
@@ -29,6 +30,8 @@ export function App() {
             <Route path="/login" element={<AuthPage mode="login" />} />
             <Route path="/cadastro" element={<AuthPage mode="signup" />} />
             <Route path="/redefinir-senha" element={<ResetPassword />} />
+            <Route path="/convite" element={<Invite />} />
+            <Route path="/convite/:token" element={<Invite />} />
             <Route path="/app" element={<AppShell />}>
               <Route index element={<Navigate to="overview" replace />} />
               <Route path="overview" element={<Overview />} />

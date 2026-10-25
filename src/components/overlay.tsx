@@ -153,7 +153,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div aria-live="polite" role="status" className="pointer-events-none fixed right-4 bottom-20 z-50 flex flex-col items-end gap-2 lg:bottom-6">
         {items.map((t) => (
-          <div key={t.id} className="pointer-events-auto flex items-center gap-2.5 rounded-md border border-line bg-surface-3 px-3.5 py-2.5 text-sm text-ink shadow-xl shadow-black/40">
+          <div
+            key={t.id}
+            className="pointer-events-auto flex items-center gap-2.5 rounded-md border border-line bg-surface-3 px-3.5 py-2.5 text-sm text-ink shadow-xl shadow-black/40"
+          >
             <span className={cx('h-1.5 w-1.5 rounded-full', dot[t.tone])} />
             {t.message}
           </div>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { Logo } from '@/components/icons'
 import { Button, ButtonLink, Field, Input, Notice } from '@/components/ui'
 import { AuthError, useAuth } from './session'
+import { readPendingInvite } from '@/features/invites/pendingInvite'
 import { validateEmail, validateLogin, validateSignup, type AuthErrors, type SignupInput } from './validation'
 
 type Mode = 'login' | 'signup' | 'forgot'
@@ -16,6 +17,7 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
   const [notice, setNotice] = useState<{ tone: 'warn' | 'risk' | 'pos'; title: string; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const disabled = auth.status === 'disabled'
+  const pendingInvite = readPendingInvite()
 
   useEffect(() => setMode(initial), [initial])
   useEffect(() => {
@@ -24,7 +26,9 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
     setNotice(null)
   }, [mode])
   useEffect(() => {
-    if (auth.status === 'signed_in') navigate('/app/overview', { replace: true })
+    if (auth.status !== 'signed_in') return
+    const token = readPendingInvite()
+    navigate(token ? `/convite/${encodeURIComponent(token)}` : '/app/overview', { replace: true })
   }, [auth.status, navigate])
 
   const set = (k: keyof SignupInput) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,14 +40,24 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
     e.preventDefault()
     setNotice(null)
     const errs: AuthErrors =
-      mode === 'signup' ? validateSignup(form) : mode === 'login' ? validateLogin(form) : validateEmail(form.email) ? { email: validateEmail(form.email) } : {}
+      mode === 'signup'
+        ? validateSignup(form, { requiresCompany: !pendingInvite })
+        : mode === 'login'
+          ? validateLogin(form)
+          : validateEmail(form.email)
+            ? { email: validateEmail(form.email) }
+            : {}
     setErrors(errs)
     if (Object.keys(errs).length) {
       document.getElementById(`auth-${Object.keys(errs)[0]}`)?.focus()
       return
     }
     if (disabled) {
-      setNotice({ tone: 'warn', title: 'Contas ainda não disponíveis', text: 'O serviço de autenticação não está configurado neste ambiente. Nenhum dado foi enviado.' })
+      setNotice({
+        tone: 'warn',
+        title: 'Contas ainda não disponíveis',
+        text: 'O serviço de autenticação não está configurado neste ambiente. Nenhum dado foi enviado.',
+      })
       return
     }
     setBusy(true)
@@ -51,9 +65,13 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
       if (mode === 'login') {
         await auth.signIn(form.email, form.password)
       } else if (mode === 'signup') {
-        const r = await auth.signUp(form)
+        const r = await auth.signUp({ ...form, company: pendingInvite ? '' : form.company })
         if (r === 'confirm_email')
-          setNotice({ tone: 'pos', title: 'Confirme seu e-mail', text: `Enviamos um link para ${form.email}. Depois de confirmar, entre para concluir a criação da empresa.` })
+          setNotice({
+            tone: 'pos',
+            title: 'Confirme seu e-mail',
+            text: `Enviamos um link para ${form.email}. Depois de confirmar, entre para ${pendingInvite ? 'aceitar o convite' : 'concluir a criação da empresa'}.`,
+          })
       } else {
         await auth.requestPasswordReset(form.email)
         setNotice({ tone: 'pos', title: 'Verifique seu e-mail', text: 'Se houver uma conta com este e-mail, você receberá um link para redefinir a senha.' })
@@ -103,16 +121,23 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
               <Field label="Seu nome" htmlFor="auth-name" error={errors.name}>
                 <Input id="auth-name" autoComplete="name" value={form.name} invalid={!!errors.name} onChange={set('name')} />
               </Field>
-              <Field label="Nome da empresa" htmlFor="auth-company" error={errors.company}>
-                <Input id="auth-company" autoComplete="organization" value={form.company} invalid={!!errors.company} onChange={set('company')} />
-              </Field>
+              {!pendingInvite && (
+                <Field label="Nome da empresa" htmlFor="auth-company" error={errors.company}>
+                  <Input id="auth-company" autoComplete="organization" value={form.company} invalid={!!errors.company} onChange={set('company')} />
+                </Field>
+              )}
             </>
           )}
           <Field label="E-mail" htmlFor="auth-email" error={errors.email}>
             <Input id="auth-email" type="email" autoComplete="email" value={form.email} invalid={!!errors.email} onChange={set('email')} />
           </Field>
           {mode !== 'forgot' && (
-            <Field label="Senha" htmlFor="auth-password" error={errors.password} hint={mode === 'signup' ? 'Ao menos 10 caracteres, com letras e números' : undefined}>
+            <Field
+              label="Senha"
+              htmlFor="auth-password"
+              error={errors.password}
+              hint={mode === 'signup' ? 'Ao menos 10 caracteres, com letras e números' : undefined}
+            >
               <Input
                 id="auth-password"
                 type="password"
@@ -155,7 +180,11 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
             )}
           </Notice>
         )}
-        {mode === 'signup' && <p className="mt-6 text-xs text-ink-3">Guardamos apenas nome, e-mail e os dados financeiros que você registrar. Seus dados não são usados para treinar modelos de IA.</p>}
+        {mode === 'signup' && (
+          <p className="mt-6 text-xs text-ink-3">
+            Guardamos apenas nome, e-mail e os dados financeiros que você registrar. Seus dados não são usados para treinar modelos de IA.
+          </p>
+        )}
       </div>
       <aside className="hidden flex-1 items-center border-l border-line-soft bg-surface px-16 lg:flex">
         <div className="max-w-md">

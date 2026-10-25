@@ -38,13 +38,7 @@ export const DECISION_LABELS: Record<DecisionType, string> = {
 
 export class DecisionError extends Error {}
 
-function monthly(
-  startDate: ISODate,
-  endDate: ISODate,
-  amount: Cents,
-  direction: 'in' | 'out',
-  description: string,
-): ProjectedEvent[] {
+function monthly(startDate: ISODate, endDate: ISODate, amount: Cents, direction: 'in' | 'out', description: string): ProjectedEvent[] {
   const out: ProjectedEvent[] = []
   for (let i = 0; i < 24; i++) {
     const d = addMonths(startDate, i)
@@ -60,12 +54,7 @@ export interface CompiledDecisions {
   assumptions: string[]
 }
 
-export function compileDecisions(
-  decisions: Decision[],
-  transactions: Transaction[],
-  asOf: ISODate,
-  horizonDays: number,
-): CompiledDecisions {
+export function compileDecisions(decisions: Decision[], transactions: Transaction[], asOf: ISODate, horizonDays: number): CompiledDecisions {
   const endDate = addDays(asOf, horizonDays - 1)
   const extraEvents: ProjectedEvent[] = []
   const dateOverrides = new Map<string, { date: ISODate; reason: string }>()
@@ -77,9 +66,7 @@ export function compileDecisions(
       case 'hire':
       case 'fixed_increase':
         positive(d.type === 'hire' ? d.monthlyCost : d.monthlyAmount)
-        extraEvents.push(
-          ...monthly(d.startDate, endDate, d.type === 'hire' ? d.monthlyCost : d.monthlyAmount, 'out', d.label),
-        )
+        extraEvents.push(...monthly(d.startDate, endDate, d.type === 'hire' ? d.monthlyCost : d.monthlyAmount, 'out', d.label))
         assumptions.push(`${d.label}: saída mensal a partir de ${d.startDate}, mesmo dia de cada mês.`)
         break
       case 'cost_reduction':
@@ -90,14 +77,11 @@ export function compileDecisions(
       case 'sales_increase':
         positive(d.monthlyAmount)
         extraEvents.push(...monthly(d.startDate, endDate, d.monthlyAmount, 'in', d.label))
-        assumptions.push(
-          `${d.label}: entrada adicional mensal a partir de ${d.startDate}. Valor informado pelo usuário, não previsto pelo sistema.`,
-        )
+        assumptions.push(`${d.label}: entrada adicional mensal a partir de ${d.startDate}. Valor informado pelo usuário, não previsto pelo sistema.`)
         break
       case 'equipment': {
         positive(d.amount)
-        if (!Number.isInteger(d.installments) || d.installments < 1 || d.installments > 48)
-          throw new DecisionError('Parcelas devem estar entre 1 e 48')
+        if (!Number.isInteger(d.installments) || d.installments < 1 || d.installments > 48) throw new DecisionError('Parcelas devem estar entre 1 e 48')
         const base = Math.floor(d.amount / d.installments)
         const remainder = d.amount - base * d.installments
         for (let i = 0; i < d.installments; i++) {
@@ -118,24 +102,20 @@ export function compileDecisions(
       }
       case 'renegotiate': {
         const tx = byId.get(d.txId)
-        if (!tx || tx.status !== 'pending' || tx.kind !== 'expense')
-          throw new DecisionError('Selecione uma conta a pagar pendente')
+        if (!tx || tx.status !== 'pending' || tx.kind !== 'expense') throw new DecisionError('Selecione uma conta a pagar pendente')
         dateOverrides.set(tx.id, { date: d.newDate, reason: `renegociado para ${d.newDate}` })
         assumptions.push(`"${tx.description}" passa a vencer em ${d.newDate}, sem juros ou multa considerados.`)
         break
       }
       case 'shift_receivable': {
         const tx = byId.get(d.txId)
-        if (!tx || tx.status !== 'pending' || tx.kind !== 'income')
-          throw new DecisionError('Selecione uma conta a receber pendente')
+        if (!tx || tx.status !== 'pending' || tx.kind !== 'income') throw new DecisionError('Selecione uma conta a receber pendente')
         const date = addDays(tx.dueDate, d.days)
         dateOverrides.set(tx.id, {
           date,
           reason: d.days >= 0 ? `atrasado ${d.days} dia(s)` : `antecipado ${-d.days} dia(s)`,
         })
-        assumptions.push(
-          `"${tx.description}" ${d.days >= 0 ? 'atrasa' : 'antecipa'} ${Math.abs(d.days)} dia(s), sem desconto ou encargos.`,
-        )
+        assumptions.push(`"${tx.description}" ${d.days >= 0 ? 'atrasa' : 'antecipa'} ${Math.abs(d.days)} dia(s), sem desconto ou encargos.`)
         break
       }
     }

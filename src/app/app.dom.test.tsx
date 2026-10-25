@@ -1,10 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { App } from '@/App'
 import { DemoRepository } from '@/data/demoRepository'
+import { DataProvider, useStore } from '@/data/store'
+import type { FinanceRepository } from '@/data/repository'
+import { ToastProvider } from '@/components/overlay'
+import { AuthProvider } from '@/features/auth/session'
+import SettingsPage from '@/features/settings/SettingsPage'
+import IntelligencePage from '@/features/intelligence/IntelligencePage'
+import type { AiAnalysisResponse } from '@/data/repository'
+import { accountBalances } from '@/domain/finance/metrics'
+import type { MemberRole } from '@/domain/types'
+import { formatBRL } from '@/lib/money'
 import { validateLogin, validateSignup } from '@/features/auth/validation'
+import { PENDING_INVITE_KEY, readPendingInvite, savePendingInvite } from '@/features/invites/pendingInvite'
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -34,6 +45,76 @@ const renderAt = (path: string) =>
     </MemoryRouter>,
   )
 
+class RoleRepository extends DemoRepository {
+  constructor(private role: MemberRole) {
+    super(null)
+  }
+  async load() {
+    const snap = await super.load()
+    return { ...snap, company: { ...snap.company, isDemo: false, role: this.role } }
+  }
+}
+
+const renderSettings = (repository?: FinanceRepository) =>
+  render(
+    <AuthProvider>
+      <ToastProvider>
+        <DataProvider repository={repository ?? new DemoRepository(null)}>
+          <MemoryRouter>
+            <ReadySettings />
+          </MemoryRouter>
+        </DataProvider>
+      </ToastProvider>
+    </AuthProvider>,
+  )
+
+function ReadySettings() {
+  const { status } = useStore()
+  return status.kind === 'ready' ? <SettingsPage /> : null
+}
+
+function ReadyIntelligence() {
+  const { status } = useStore()
+  return status.kind === 'ready' ? <IntelligencePage /> : null
+}
+
+const renderIntelligence = (repository: FinanceRepository) =>
+  render(
+    <ToastProvider>
+      <DataProvider repository={repository}>
+        <MemoryRouter>
+          <ReadyIntelligence />
+        </MemoryRouter>
+      </DataProvider>
+    </ToastProvider>,
+  )
+
+const aiResponse = (over: Partial<AiAnalysisResponse> = {}): AiAnalysisResponse => ({
+  analysis: {
+    agent: 'cash',
+    generatedBy: 'ai',
+    summary: 'Resumo gerado pelo servidor.',
+    period: { start: '2026-03-15', end: '2026-04-13' },
+    evidence: [{ claim: 'Saldo registrado consultado.', factKey: 'start' }],
+    assumptions: ['Cenário-base.'],
+    limitations: ['Estimativa baseada nos lançamentos registrados.'],
+    suggestedActions: ['Acompanhar o caixa.'],
+  },
+  facts: { start: { label: 'Saldo registrado', value: 100_000 } },
+  review: { valid: true, issues: [] },
+  status: 'ok',
+  cached: true,
+  provider: 'fake',
+  ...over,
+})
+
+function serverRepository(request: FinanceRepository['requestAnalysis']): FinanceRepository {
+  const repo = new DemoRepository(null)
+  Object.defineProperty(repo, 'mode', { value: 'supabase' })
+  Object.defineProperty(repo, 'requestAnalysis', { value: request })
+  return repo
+}
+
 describe('navegação', () => {
   it('abre a visão geral com as quatro áreas da central de decisões', async () => {
     renderAt('/app/overview')
@@ -53,6 +134,57 @@ describe('navegação', () => {
     expect(await screen.findByRole('heading', { name: 'Para onde o caixa está indo' }, { timeout: 5000 })).toBeTruthy()
     await user.click(within(nav).getByRole('link', { name: /Simulador/ }))
     expect(await screen.findByRole('heading', { name: 'Teste antes de decidir' }, { timeout: 5000 })).toBeTruthy()
+  })
+
+  it('inteligência em demonstração mostra exemplo local sem chamar IA', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/inteligencia')
+    expect(await screen.findByRole('heading', { name: 'Agente de caixa' }, { timeout: 5000 })).toBeTruthy()
+    expect(screen.getByText('Análises por IA indisponíveis')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /Ver exemplo demonstrativo/ }))
+    expect(await screen.findByText('Exemplo demonstrativo')).toBeTruthy()
+    expect(screen.getByText(/Nenhuma IA foi chamada/)).toBeTruthy()
+    expect(screen.getByText(/Revisor de análises/)).toBeTruthy()
+  })
+
+  it('inteligência no servidor gera por agente e mostra o selo do revisor', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const repo = serverRepository(async (agent) => {
+      calls.push(agent)
+      return aiResponse()
+    })
+    renderIntelligence(repo)
+
+    expect(await screen.findByRole('heading', { name: 'Agente de análise' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Resumo gerado pelo servidor.')).toBeTruthy()
+    expect(screen.getByText('Gerado por IA, revisado automaticamente')).toBeTruthy()
+    expect(screen.getByText('Do cache')).toBeTruthy()
+
+    await user.click(screen.getByRole('radio', { name: 'Despesas' }))
+    await user.click(screen.getByRole('button', { name: 'Gerar análise' }))
+    await waitFor(() => expect(calls).toEqual(['cash', 'expenses']))
+  })
+
+  it('inteligência no servidor mostra erro e análise reprovada sem confundir com confiável', async () => {
+    const user = userEvent.setup()
+    const failing = serverRepository(async () => {
+      throw new Error('Cota mensal de análises de IA esgotada.')
+    })
+    renderIntelligence(failing)
+    await user.click(await screen.findByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Cota mensal de análises de IA esgotada.')).toBeTruthy()
+    cleanup()
+
+    const rejected = serverRepository(async () =>
+      aiResponse({ status: 'rejected', review: { valid: false, issues: ['Valor citado não corresponde a nenhum cálculo: R$ 9,99'] } }),
+    )
+    renderIntelligence(rejected)
+    await user.click(await screen.findByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Gerada por IA — reprovada pelo revisor')).toBeTruthy()
+    expect(screen.getByText(/Não use como referência/)).toBeTruthy()
+    expect(screen.queryByText('Gerado por IA, revisado automaticamente')).toBeNull()
   })
 
   it('rota inexistente mostra página não encontrada', async () => {
@@ -115,5 +247,159 @@ describe('formulários', () => {
     })
     expect(validateSignup({ name: 'Ana', company: 'Loja', email: 'ana@loja.com.br', password: 'senhaforte123', confirm: 'senhaforte123' })).toEqual({}) // gitleaks:allow (senha fictícia de teste)
     expect(validateLogin({ email: '', password: '' })).toMatchObject({ email: 'Informe o e-mail', password: 'Informe a senha' })
+  })
+})
+
+describe('configurações da empresa', () => {
+  it('explica que a IA está desligada por padrão no plano trial', async () => {
+    renderSettings(new RoleRepository('owner'))
+    expect(await screen.findByText('Desligada por padrão')).toBeTruthy()
+    expect(screen.getByText(/plano trial permite 0 análises por mês/)).toBeTruthy()
+  })
+
+  it('edita o nome da empresa no modo demonstração', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    const input = await screen.findByLabelText('Nome da empresa')
+    await user.clear(input)
+    await user.type(input, 'Padaria Central')
+    await user.click(screen.getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy()
+  })
+
+  it('mostra erro para nome curto', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    const input = await screen.findByLabelText('Nome da empresa')
+    await user.clear(input)
+    await user.type(input, 'a')
+    await user.click(screen.getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByText('Use de 2 a 120 caracteres.')).toBeTruthy()
+  })
+
+  it('edita o saldo de abertura e o saldo exibido muda sem recarregar', async () => {
+    const user = userEvent.setup()
+    const repo = new DemoRepository(null)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    const before = accountBalances(snap.accounts, snap.transactions, snap.anchor).find((b) => b.account.id === account.id)!.balance
+    const newOpening = 500_000
+    renderSettings(repo)
+
+    const input = await screen.findByLabelText(`Saldo de abertura de ${account.name} (R$)`)
+    await user.clear(input)
+    await user.type(input, '5000,00')
+    await user.click(screen.getByRole('button', { name: `Salvar saldo de abertura de ${account.name}` }))
+
+    const expected = before - account.openingBalance + newOpening
+    const normalized = (s: string | null | undefined) => (s ?? '').replace(/\s/g, ' ')
+    await waitFor(() => {
+      const row = screen.getByText(account.name).closest('li')!
+      expect(normalized(row.textContent)).toContain(normalized(formatBRL(expected)))
+      expect(normalized(row.textContent)).toContain(normalized(formatBRL(newOpening)))
+    })
+  })
+
+  it('mostra erro para saldo inválido', async () => {
+    const user = userEvent.setup()
+    const repo = new DemoRepository(null)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    renderSettings(repo)
+    const input = await screen.findByLabelText(`Saldo de abertura de ${account.name} (R$)`)
+    await user.clear(input)
+    await user.type(input, 'abc')
+    await user.click(screen.getByRole('button', { name: `Salvar saldo de abertura de ${account.name}` }))
+    expect(await screen.findByText('Valor inválido. Ex.: 1.250,50')).toBeTruthy()
+  })
+
+  it.each(['member', 'viewer'] as MemberRole[])('%s vê os dados apenas para leitura', async (role) => {
+    renderSettings(new RoleRepository(role))
+    expect(await screen.findByText('Somente proprietários e administradores podem alterar os dados da empresa.')).toBeTruthy()
+    expect(screen.queryByLabelText('Nome da empresa')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Salvar saldo de abertura/ })).toBeNull()
+  })
+
+  it.each(['owner', 'admin'] as MemberRole[])('%s pode editar os dados da empresa', async (role) => {
+    renderSettings(new RoleRepository(role))
+    expect(await screen.findByLabelText('Nome da empresa')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /Salvar saldo de abertura/ }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('equipe', () => {
+  it.each(['member', 'viewer'] as MemberRole[])('%s vê a lista, mas não gerencia a equipe', async (role) => {
+    renderSettings(new RoleRepository(role))
+    expect(await screen.findByText('Marina Costa (fictícia)')).toBeTruthy()
+    expect(screen.getByText('Proprietário')).toBeTruthy()
+    expect(screen.queryByLabelText('Convidar por e-mail')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Convidar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Remover/ })).toBeNull()
+    expect(screen.queryByLabelText(/Papel de /)).toBeNull()
+  })
+
+  it.each(['owner', 'admin'] as MemberRole[])('%s convida e recebe o link gerado', async (role) => {
+    const user = userEvent.setup()
+    renderSettings(new RoleRepository(role))
+    await screen.findByText('Marina Costa (fictícia)')
+
+    await user.type(screen.getByLabelText('Convidar por e-mail'), 'novo@exemplo.com')
+    await user.click(screen.getByRole('button', { name: 'Convidar' }))
+
+    const link = (await screen.findByLabelText('Link do convite')) as HTMLInputElement
+    expect(link.value).toMatch(/\/convite\/demo-/)
+    expect(screen.getByText('novo@exemplo.com')).toBeTruthy()
+    expect(screen.getByText(/Link de demonstração/)).toBeTruthy()
+  })
+
+  it('copia o link do convite', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    renderSettings(new RoleRepository('owner'))
+    await screen.findByText('Marina Costa (fictícia)')
+    await user.type(screen.getByLabelText('Convidar por e-mail'), 'copiar@exemplo.com')
+    await user.click(screen.getByRole('button', { name: 'Convidar' }))
+    const link = (await screen.findByLabelText('Link do convite')) as HTMLInputElement
+    await user.click(screen.getByRole('button', { name: 'Copiar link' }))
+    expect(writeText).toHaveBeenCalledWith(link.value)
+    expect(await screen.findByText('Link do convite copiado')).toBeTruthy()
+  })
+})
+
+describe('convite de membros', () => {
+  it('cadastro de convidado não pede o nome da empresa', async () => {
+    const user = userEvent.setup()
+    savePendingInvite('token-de-convite')
+    renderAt('/cadastro')
+    expect(await screen.findByRole('heading', { name: 'Criar conta' }, { timeout: 5000 })).toBeTruthy()
+    const name = screen.getByLabelText('Seu nome')
+    const email = screen.getByLabelText('E-mail')
+    const password = screen.getByLabelText('Senha')
+    expect(screen.queryByLabelText('Nome da empresa')).toBeNull()
+    await user.type(name, 'Pessoa Convidada')
+    await user.type(email, 'convidada@exemplo.com')
+    await user.type(password, 'senhaforte123') // gitleaks:allow (senha fictícia de teste)
+    await user.type(screen.getByLabelText('Confirmar senha'), 'senhaforte123')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    expect(screen.queryByText('Informe o nome da empresa')).toBeNull()
+  })
+
+  it('cadastro comum continua exigindo o nome da empresa', async () => {
+    renderAt('/cadastro')
+    expect(await screen.findByLabelText('Nome da empresa', {}, { timeout: 5000 })).toBeTruthy()
+  })
+
+  it('/convite/:token guarda o token e explica o modo de demonstração', async () => {
+    renderAt('/convite/token-abc-123')
+    expect(await screen.findByText('Convite de demonstração', {}, { timeout: 5000 })).toBeTruthy()
+    expect(readPendingInvite()).toBe('token-abc-123')
+    expect(screen.getByText(/Convites de equipe funcionam somente com o Supabase/)).toBeTruthy()
+  })
+
+  it('descarta convite pendente com mais de 7 dias', () => {
+    localStorage.setItem(PENDING_INVITE_KEY, JSON.stringify({ token: 'antigo', savedAt: Date.now() - 8 * 24 * 60 * 60 * 1000 }))
+    expect(readPendingInvite()).toBeNull()
+    expect(localStorage.getItem(PENDING_INVITE_KEY)).toBeNull()
   })
 })

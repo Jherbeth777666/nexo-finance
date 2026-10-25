@@ -99,9 +99,7 @@ export function detectAlerts(
   const inc = inconsistencies(ctx, transactions)
   if (inc) alerts.push(inc)
 
-  alerts.sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0),
-  )
+  alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0))
   return { alerts, skipped }
 }
 
@@ -433,7 +431,10 @@ function duplicates(ctx: Ctx): FinancialAlert | null {
   if (!pairs.length) return null
   const ids = [...new Set(pairs.flat().map((t) => t.id))]
   const impact = pairs.reduce((s, [, b]) => s + b.amount, 0)
-  const dates = pairs.flat().map((t) => t.competenceDate).sort()
+  const dates = pairs
+    .flat()
+    .map((t) => t.competenceDate)
+    .sort()
   return {
     fingerprint: `suspected_duplicates:${idsHash(ids)}`,
     rule: 'suspected_duplicates',

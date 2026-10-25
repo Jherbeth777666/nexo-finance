@@ -26,8 +26,11 @@ interface StoreValue {
     saveAlertConfig: FinanceRepository['saveAlertConfig']
     saveCustomScenario: FinanceRepository['saveCustomScenario']
     addCategory: FinanceRepository['addCategory']
+    updateCompanyName: FinanceRepository['updateCompanyName']
+    updateAccountOpeningBalance: FinanceRepository['updateAccountOpeningBalance']
     saveScenario: FinanceRepository['saveScenario']
     deleteScenario: FinanceRepository['deleteScenario']
+    requestAnalysis: FinanceRepository['requestAnalysis']
     reset: () => Promise<void>
   }
 }
@@ -91,6 +94,16 @@ export function DataProvider({ children, repository }: { children: ReactNode; re
         await refresh()
         return r
       },
+      updateCompanyName: async (name) => {
+        const r = await repo.updateCompanyName(name)
+        await refresh()
+        return r
+      },
+      updateAccountOpeningBalance: async (id, cents) => {
+        const r = await repo.updateAccountOpeningBalance(id, cents)
+        await refresh()
+        return r
+      },
       saveScenario: async (s) => {
         const r = await repo.saveScenario(s)
         await refresh()
@@ -100,6 +113,7 @@ export function DataProvider({ children, repository }: { children: ReactNode; re
         await repo.deleteScenario(id)
         await refresh()
       },
+      requestAnalysis: (agent) => repo.requestAnalysis(agent),
       reset: async () => {
         const data = await repo.reset()
         setStatus({ kind: 'ready', data })

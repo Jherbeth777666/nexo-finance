@@ -1,5 +1,6 @@
 import { DemoRepository } from './demoRepository'
 import { validateTransaction, emptyInput } from '@/domain/transactions'
+import { accountBalances } from '@/domain/finance/metrics'
 
 class MemoryStorage implements Storage {
   private m = new Map<string, string>()
@@ -62,6 +63,18 @@ describe('repositório de demonstração', () => {
     expect((await repo.load()).transactions.length).toBeGreaterThan(0)
   })
 
+  it('gera análise local por agente sem provedor externo', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    for (const agent of ['cash', 'expenses', 'scenarios'] as const) {
+      const result = await repo.requestAnalysis(agent)
+      expect(result.provider).toBe('local-rules')
+      expect(result.cached).toBe(false)
+      expect(result.analysis.agent).toBe(agent)
+      expect(result.analysis.generatedBy).toBe('local-rules')
+      expect(Object.keys(result.facts).length).toBeGreaterThan(0)
+    }
+  })
+
   it('reinicializar apaga alterações', async () => {
     const repo = new DemoRepository(new MemoryStorage())
     const snap = await repo.load()
@@ -101,6 +114,125 @@ describe('repositório de demonstração', () => {
     const repo = new DemoRepository(new MemoryStorage())
     await repo.addCategory({ name: 'Marketing', kind: 'expense' })
     await expect(repo.addCategory({ name: ' marketing ', kind: 'expense' })).rejects.toThrow(/Já existe/)
+  })
+
+  it('renomeia a empresa, persiste e registra auditoria', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    const before = await repo.load()
+    const company = await repo.updateCompanyName('  Padaria Central  ')
+    expect(company.name).toBe('Padaria Central')
+    const after = await new DemoRepository(storage).load()
+    expect(after.company.name).toBe('Padaria Central')
+    expect(after.audit[0]).toMatchObject({ action: 'update', entity: 'company', entityId: before.company.id })
+    expect(after.audit[0].summary).toMatch(/Padaria Central/)
+  })
+
+  it('rejeita nome de empresa inválido', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    await expect(repo.updateCompanyName(' a ')).rejects.toThrow(/2 a 120/)
+    await expect(repo.updateCompanyName('x'.repeat(121))).rejects.toThrow(/2 a 120/)
+  })
+
+  it('altera o saldo de abertura, persiste, audita e recalcula o saldo da conta', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    const before = accountBalances(snap.accounts, snap.transactions, snap.anchor).find((b) => b.account.id === account.id)!
+    const updated = await repo.updateAccountOpeningBalance(account.id, 0)
+    expect(updated.openingBalance).toBe(0)
+    const after = await new DemoRepository(storage).load()
+    expect(after.accounts.find((a) => a.id === account.id)?.openingBalance).toBe(0)
+    const balance = accountBalances(after.accounts, after.transactions, after.anchor).find((b) => b.account.id === account.id)!
+    expect(balance.balance).toBe(before.balance - account.openingBalance)
+    expect(after.audit[0]).toMatchObject({ action: 'update', entity: 'account', entityId: account.id })
+  })
+
+  it('aceita saldo de abertura zero e negativo, mas rejeita conta inexistente e valor inválido', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    await expect(repo.updateAccountOpeningBalance(snap.accounts[0].id, -5000)).resolves.toMatchObject({ openingBalance: -5000 })
+    await expect(repo.updateAccountOpeningBalance('nao-existe', 100)).rejects.toThrow(/não encontrada/)
+    await expect(repo.updateAccountOpeningBalance(snap.accounts[0].id, 1.5)).rejects.toThrow(/inválido/)
+  })
+})
+
+describe('equipe no repositório de demonstração', () => {
+  it('lista a equipe fictícia e cria convite com token de demonstração', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const members = await repo.listMembers()
+    expect(members.map((m) => m.role)).toEqual(['owner', 'member', 'viewer'])
+    expect(members.every((m) => !!m.email)).toBe(true)
+
+    const invite = await repo.createInvite({ email: '  Nova@Exemplo.com ', role: 'admin' })
+    expect(invite).toMatchObject({ email: 'nova@exemplo.com', role: 'admin', acceptedAt: null, revokedAt: null })
+    expect(invite.token).toMatch(/^demo-/)
+    expect(await repo.listInvites()).toHaveLength(1)
+
+    const audit = (await repo.load()).audit[0]
+    expect(audit).toMatchObject({ action: 'create', entity: 'invite', entityId: invite.id })
+    expect(audit.summary).toContain('nova@exemplo.com')
+    expect(audit.summary).not.toContain(invite.token!)
+  })
+
+  it('rejeita convite para quem já é membro, convite ativo duplicado e entrada inválida', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    await expect(repo.createInvite({ email: 'MARINA@exemplo.com.br', role: 'member' })).rejects.toThrow(/já faz parte/)
+    await repo.createInvite({ email: 'x@exemplo.com', role: 'member' })
+    await expect(repo.createInvite({ email: 'x@exemplo.com', role: 'viewer' })).rejects.toThrow(/convite ativo/)
+    await expect(repo.createInvite({ email: 'sem-arroba', role: 'member' })).rejects.toThrow(/válido/)
+    await expect(repo.createInvite({ email: 'z@exemplo.com', role: 'owner' as never })).rejects.toThrow(/Papel inválido/)
+  })
+
+  it('revoga convite, troca papel e remove membro, protegendo o owner', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const members = await repo.listMembers()
+    const owner = members.find((m) => m.role === 'owner')!
+    const member = members.find((m) => m.role === 'member')!
+
+    const invite = await repo.createInvite({ email: 'convidado@exemplo.com', role: 'viewer' })
+    await repo.revokeInvite(invite.id)
+    expect((await repo.listInvites())[0].revokedAt).toBeTruthy()
+
+    await repo.updateMemberRole(member.userId, 'viewer')
+    expect((await repo.listMembers()).find((m) => m.userId === member.userId)?.role).toBe('viewer')
+    await repo.removeMember(member.userId)
+    expect((await repo.listMembers()).some((m) => m.userId === member.userId)).toBe(false)
+
+    await expect(repo.updateMemberRole(owner.userId, 'admin')).rejects.toThrow(/proprietário/)
+    await expect(repo.removeMember(owner.userId)).rejects.toThrow(/proprietário/)
+    await expect(repo.updateMemberRole('nao-existe', 'member')).rejects.toThrow(/não encontrado/)
+    await expect(repo.removeMember('nao-existe')).rejects.toThrow(/não encontrado/)
+    await expect(repo.revokeInvite('nao-existe')).rejects.toThrow(/não encontrado/)
+
+    const audit = (await repo.load()).audit.map((a) => a.entity)
+    expect(audit).toEqual(expect.arrayContaining(['invite', 'member']))
+  })
+
+  it('persiste equipe e convites entre instâncias', async () => {
+    const storage = new MemoryStorage()
+    const first = new DemoRepository(storage)
+    await first.createInvite({ email: 'persistente@exemplo.com', role: 'member' })
+    const second = new DemoRepository(storage)
+    expect(await second.listInvites()).toHaveLength(1)
+    expect((await second.listMembers()).length).toBe(3)
+  })
+
+  it('migra estado antigo sem equipe e sem papel da empresa', async () => {
+    const storage = new MemoryStorage()
+    const first = new DemoRepository(storage)
+    await first.reset()
+    const raw = JSON.parse(storage.getItem('nexo.demo.v1')!)
+    delete raw.members
+    delete raw.invites
+    delete raw.company.role
+    storage.setItem('nexo.demo.v1', JSON.stringify(raw))
+
+    const repo = new DemoRepository(storage)
+    expect((await repo.load()).company.role).toBe('owner')
+    expect(await repo.listMembers()).toHaveLength(3)
+    expect(await repo.listInvites()).toEqual([])
   })
 })
 

@@ -23,7 +23,7 @@ interface Actor {
 }
 
 let admin: SupabaseClient
-let A: Actor, B: Actor, C: Actor
+let A: Actor, B: Actor, C: Actor, D: Actor
 let companyA: string, companyB: string
 let accountA: string, accountB: string
 let catExpenseA: string, catIncomeA: string
@@ -60,7 +60,7 @@ const tx = (company: string, account: string, over: Record<string, unknown> = {}
 describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco', () => {
   beforeAll(async () => {
     admin = createClient(URL!, SERVICE!, opts)
-    ;[A, B, C] = await Promise.all([makeUser('a'), makeUser('b'), makeUser('c')])
+    ;[A, B, C, D] = await Promise.all([makeUser('a'), makeUser('b'), makeUser('c'), makeUser('d')])
 
     const ra = await A.sb.rpc('create_company', { p_name: `Empresa A ${run}`, p_opening_balance: 1000 })
     const rb = await B.sb.rpc('create_company', { p_name: `Empresa B ${run}` })
@@ -74,19 +74,17 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
     catExpenseA = cats.data!.find((c) => c.kind === 'expense')!.id
     catIncomeA = cats.data!.find((c) => c.kind === 'income')!.id
 
-    const ins = await A.sb.from('transactions').insert(tx(companyA, accountA, { category_id: catExpenseA })).select('id').single()
+    const ins = await A.sb
+      .from('transactions')
+      .insert(tx(companyA, accountA, { category_id: catExpenseA }))
+      .select('id')
+      .single()
     if (ins.error) throw ins.error
     txA = ins.data.id
 
     // A (owner) adiciona C como somente leitura — exercita a política de membros.
     const m = await A.sb.from('company_members').insert({ company_id: companyA, user_id: C.id, role: 'viewer' })
     if (m.error) throw m.error
-  })
-
-  afterAll(async () => {
-    if (!admin) return
-    await admin.from('companies').delete().in('id', [companyA, companyB].filter(Boolean))
-    for (const u of [A, B, C].filter(Boolean)) await admin.auth.admin.deleteUser(u.id)
   })
 
   describe('usuário B tentando acessar a empresa A', () => {
@@ -157,7 +155,9 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
         p_company: companyA,
         p_file_name: 'ataque.csv',
         p_file_hash: 'a'.repeat(64),
-        p_rows: [{ kind: 'income', status: 'pending', description: 'x', account_id: accountA, amount: '1.00', competence_date: '2026-01-01', due_date: '2026-01-01' }],
+        p_rows: [
+          { kind: 'income', status: 'pending', description: 'x', account_id: accountA, amount: '1.00', competence_date: '2026-01-01', due_date: '2026-01-01' },
+        ],
         p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 },
       })
       expect(r.error?.code).toBe('42501')
@@ -171,7 +171,11 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
     })
 
     it('não altera configurações nem estado de alertas de A', async () => {
-      const s = await B.sb.from('company_settings').update({ alert_config: { safetyMargin: 0 } }).eq('company_id', companyA).select('company_id')
+      const s = await B.sb
+        .from('company_settings')
+        .update({ alert_config: { safetyMargin: 0 } })
+        .eq('company_id', companyA)
+        .select('company_id')
       expect(s.data ?? []).toEqual([])
       const a = await B.sb.from('alert_states').insert({ company_id: companyA, fingerprint: 'x', state: 'ignored' })
       expect(a.error?.code).toBe('42501')
@@ -212,6 +216,34 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
       const r = await C.sb.from('company_members').update({ role: 'admin' }).eq('company_id', companyA).eq('user_id', C.id).select('role')
       expect(r.data ?? []).toEqual([])
     })
+    it('não renomeia a empresa nem altera saldo de abertura', async () => {
+      const co = await C.sb.from('companies').update({ name: 'Pelo viewer' }).eq('id', companyA).select('id')
+      expect(co.data ?? []).toEqual([])
+      const acc = await C.sb.from('accounts').update({ opening_balance: '1.00' }).eq('id', accountA).select('id')
+      expect(acc.data ?? []).toEqual([])
+    })
+  })
+
+  describe('dados da empresa (usuário A, owner)', () => {
+    it('renomeia a empresa e altera o saldo de abertura, com registro de ações', async () => {
+      const co = await A.sb
+        .from('companies')
+        .update({ name: `Empresa A renomeada ${run}` })
+        .eq('id', companyA)
+        .select('name')
+      // O nome precisa mudar de verdade: o gatilho só audita quando old.name difere de new.name.
+      expect(co.data).toEqual([{ name: `Empresa A renomeada ${run}` }])
+      const acc = await A.sb.from('accounts').update({ opening_balance: '1234.56' }).eq('id', accountA).select('opening_balance')
+      expect(Number(acc.data![0].opening_balance)).toBe(1234.56)
+      const logs = await A.sb.from('audit_logs').select('entity').eq('company_id', companyA).eq('action', 'update').in('entity', ['company', 'account'])
+      expect(new Set(logs.data!.map((l) => l.entity))).toEqual(new Set(['company', 'account']))
+    })
+    it('não altera o plano nem colunas fora das permitidas', async () => {
+      const plan = await A.sb.from('companies').update({ plan: 'trial' }).eq('id', companyA)
+      expect(plan.error?.code).toBe('42501')
+      const owner = await A.sb.from('companies').update({ created_by: B.id }).eq('id', companyA)
+      expect(owner.error?.code).toBe('42501')
+    })
   })
 
   describe('regras de integridade no servidor (usuário A)', () => {
@@ -243,8 +275,23 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
       await expectRejected({ description: 'x'.repeat(201) })
     })
     it('mesma origem de importação não entra duas vezes', async () => {
-      const row = { kind: 'income', status: 'pending', description: 'Linha', account_id: accountA, amount: '10.00', competence_date: '2026-01-01', due_date: '2026-01-05', source_ref: `row:${run}` }
-      const args = { p_company: companyA, p_file_name: 'a.csv', p_file_hash: 'b'.repeat(64), p_rows: [row], p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 } }
+      const row = {
+        kind: 'income',
+        status: 'pending',
+        description: 'Linha',
+        account_id: accountA,
+        amount: '10.00',
+        competence_date: '2026-01-01',
+        due_date: '2026-01-05',
+        source_ref: `row:${run}`,
+      }
+      const args = {
+        p_company: companyA,
+        p_file_name: 'a.csv',
+        p_file_hash: 'b'.repeat(64),
+        p_rows: [row],
+        p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 },
+      }
       const first = await A.sb.rpc('import_transactions', args)
       expect(first.error).toBeNull()
       const again = await A.sb.rpc('import_transactions', args)
@@ -269,6 +316,121 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
       expect(r.error).not.toBeNull()
     })
   })
+})
+
+describe.skipIf(!configured)('convites de membros', () => {
+  let inviteD: { id: string; token: string }
+  const GENERIC = /Convite inválido, expirado ou destinado a outro e-mail/
+
+  it('owner cria convite: só o hash do token é gravado e a auditoria não tem o token', async () => {
+    const r = await A.sb.rpc('create_invite', { p_company: companyA, p_email: D.email.toUpperCase(), p_role: 'member' })
+    expect(r.error).toBeNull()
+    inviteD = r.data as { id: string; token: string }
+    expect(inviteD.token.length).toBeGreaterThan(20)
+
+    const row = await A.sb.from('company_invites').select('id,email,role,token_hash').eq('id', inviteD.id).single()
+    expect(row.data!.email).toBe(D.email)
+    expect(row.data!.role).toBe('member')
+    expect(String(row.data!.token_hash)).not.toBe(inviteD.token)
+
+    const logs = await A.sb.from('audit_logs').select('summary').eq('company_id', companyA).eq('entity', 'invite')
+    expect(logs.data!.some((l) => String(l.summary).includes(D.email))).toBe(true)
+    expect(logs.data!.every((l) => !String(l.summary).includes(inviteD.token))).toBe(true)
+
+    const alreadyMember = await A.sb.rpc('create_invite', { p_company: companyA, p_email: C.email, p_role: 'member' })
+    expect(alreadyMember.error?.code).toBe('22023')
+    const duplicate = await A.sb.rpc('create_invite', { p_company: companyA, p_email: D.email, p_role: 'member' })
+    expect(duplicate.error?.code).toBe('22023')
+  })
+
+  it('viewer, outro tenant e anon não criam, leem nem revogam convites', async () => {
+    for (const actor of [C, B]) {
+      const read = await actor.sb.from('company_invites').select('id').eq('company_id', companyA)
+      expect(read.data ?? []).toEqual([])
+      const create = await actor.sb.rpc('create_invite', { p_company: companyA, p_email: 'outro@example.com', p_role: 'member' })
+      expect(create.error?.code).toBe('42501')
+      const revoke = await actor.sb.rpc('revoke_invite', { p_invite: inviteD.id })
+      expect(revoke.error?.code).toBe('42501')
+    }
+    const anon = createClient(URL!, ANON!, opts)
+    const read = await anon.from('company_invites').select('id').eq('company_id', companyA)
+    expect(read.data ?? []).toEqual([])
+  })
+
+  it('insert direto em company_invites é negado', async () => {
+    const r = await A.sb.from('company_invites').insert({
+      company_id: companyA,
+      email: 'direto@example.com',
+      role: 'member',
+      token_hash: '\\x00',
+    })
+    expect(r.error).not.toBeNull()
+  })
+
+  it('accept_invite falha com token inválido, de outro usuário e revogado', async () => {
+    const invalid = await D.sb.rpc('accept_invite', { p_token: 'token-que-nao-existe' })
+    expect(invalid.error?.code).toBe('22023')
+    expect(invalid.error?.message).toMatch(GENERIC)
+
+    const wrongUser = await B.sb.rpc('accept_invite', { p_token: inviteD.token })
+    expect(wrongUser.error?.code).toBe('22023')
+    expect(wrongUser.error?.message).toMatch(GENERIC)
+    const stillOut = await B.sb.from('company_members').select('user_id').eq('company_id', companyA).eq('user_id', B.id)
+    expect(stillOut.data).toEqual([])
+  })
+
+  it('accept_invite adiciona o convidado e registra auditoria', async () => {
+    const r = await D.sb.rpc('accept_invite', { p_token: inviteD.token })
+    expect(r.error).toBeNull()
+    expect(r.data).toBe(companyA)
+
+    const member = await D.sb.from('company_members').select('role').eq('company_id', companyA).eq('user_id', D.id).single()
+    expect(member.data!.role).toBe('member')
+    const accepted = await A.sb.from('company_invites').select('accepted_at').eq('id', inviteD.id).single()
+    expect(accepted.data!.accepted_at).toBeTruthy()
+    const logs = await A.sb.from('audit_logs').select('entity,summary').eq('company_id', companyA)
+    expect(logs.data!.some((l) => l.entity === 'member' && String(l.summary).includes('member'))).toBe(true)
+  })
+
+  it('limite do plano trial (3): novo convite e 4º membro falham com 54000', async () => {
+    // Membros: A (owner), C (viewer) e D (member) = 3.
+    const invite = await A.sb.rpc('create_invite', { p_company: companyA, p_email: B.email, p_role: 'member' })
+    expect(invite.error?.code).toBe('54000')
+    const direct = await A.sb.from('company_members').insert({ company_id: companyA, user_id: B.id, role: 'member' })
+    expect(direct.error?.code).toBe('54000')
+  })
+
+  it('revogar convite impede o aceite e a remoção libera espaço', async () => {
+    const del = await A.sb.from('company_members').delete().eq('company_id', companyA).eq('user_id', D.id).select('user_id')
+    expect(del.data).toHaveLength(1)
+
+    const created = await A.sb.rpc('create_invite', { p_company: companyA, p_email: B.email, p_role: 'viewer' })
+    expect(created.error).toBeNull()
+    const inv = created.data as { id: string; token: string }
+    const revoked = await A.sb.rpc('revoke_invite', { p_invite: inv.id })
+    expect(revoked.error).toBeNull()
+    const accepted = await B.sb.rpc('accept_invite', { p_token: inv.token })
+    expect(accepted.error?.code).toBe('22023')
+    expect(accepted.error?.message).toMatch(GENERIC)
+  })
+
+  it('admin não altera nem remove o owner', async () => {
+    const promote = await A.sb.from('company_members').update({ role: 'admin' }).eq('company_id', companyA).eq('user_id', C.id).select('role')
+    expect(promote.data).toEqual([{ role: 'admin' }])
+
+    const update = await C.sb.from('company_members').update({ role: 'viewer' }).eq('company_id', companyA).eq('user_id', A.id).select('role')
+    expect(update.data ?? []).toEqual([])
+    const remove = await C.sb.from('company_members').delete().eq('company_id', companyA).eq('user_id', A.id).select('user_id')
+    expect(remove.data ?? []).toEqual([])
+    const owner = await A.sb.from('company_members').select('role').eq('company_id', companyA).eq('user_id', A.id).single()
+    expect(owner.data!.role).toBe('owner')
+  })
+})
+
+afterAll(async () => {
+  if (!admin) return
+  await admin.from('companies').delete().in('id', [companyA, companyB].filter(Boolean))
+  for (const u of [A, B, C, D].filter(Boolean)) await admin.auth.admin.deleteUser(u.id)
 })
 
 describe.runIf(!configured)('configuração', () => {

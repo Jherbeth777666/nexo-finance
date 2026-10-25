@@ -1,10 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AlertState, AuditEntry, Category, MemberRole, Transaction } from '@/domain/types'
+import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, MemberRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG, type AlertConfig } from '@/domain/finance/alerts'
+import type { AccountBalance, MonthPoint } from '@/domain/finance/metrics'
 import { CONSERVATIVE_SCENARIO, type ScenarioAssumptions } from '@/domain/finance/projection'
+import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import type { ValidTransaction } from '@/domain/transactions'
-import { todayIn } from '@/lib/dates'
-import { RepositoryError, type CompanySnapshot, type FinanceRepository, type ImportRecord, type SavedScenario } from './repository'
+import { addDays, todayIn } from '@/lib/dates'
+import type { Cents } from '@/lib/money'
+import {
+  RepositoryError,
+  type AiAnalysisResponse,
+  type BaseProjection,
+  type CompanySnapshot,
+  type CreateInviteInput,
+  type FinanceRepository,
+  type ImportRecord,
+  type SavedScenario,
+} from './repository'
 import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
 
 /**
@@ -56,7 +68,12 @@ export class SupabaseRepository implements FinanceRepository {
 
   private async fetchAudit(): Promise<AuditEntry[]> {
     const rows = check(
-      await this.sb.from('audit_logs').select('id,at,actor,action,entity,entity_id,summary').eq('company_id', this.companyId).order('at', { ascending: false }).limit(200),
+      await this.sb
+        .from('audit_logs')
+        .select('id,at,actor,action,entity,entity_id,summary')
+        .eq('company_id', this.companyId)
+        .order('at', { ascending: false })
+        .limit(200),
     ) as { id: number; at: string; actor: string | null; action: AuditEntry['action']; entity: string; entity_id: string; summary: string }[]
     const missing = [...new Set(rows.map((r) => r.actor).filter((a): a is string => !!a && !this.actorNames.has(a)))]
     if (missing.length) {
@@ -83,8 +100,18 @@ export class SupabaseRepository implements FinanceRepository {
       this.fetchTransactions(),
       this.sb.from('alert_states').select('fingerprint,state,note,updated_at').eq('company_id', c),
       this.sb.from('company_settings').select('alert_config,custom_scenario').eq('company_id', c).maybeSingle(),
-      this.sb.from('imports').select('id,file_name,file_hash,actor,total_rows,imported,skipped,errors,warnings,created_at').eq('company_id', c).order('created_at', { ascending: false }).limit(100),
-      this.sb.from('scenarios').select('id,name,horizon_days,decisions,as_of,result_summary,created_at').eq('company_id', c).order('created_at', { ascending: false }).limit(50),
+      this.sb
+        .from('imports')
+        .select('id,file_name,file_hash,actor,total_rows,imported,skipped,errors,warnings,created_at')
+        .eq('company_id', c)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      this.sb
+        .from('scenarios')
+        .select('id,name,horizon_days,decisions,as_of,result_summary,created_at')
+        .eq('company_id', c)
+        .order('created_at', { ascending: false })
+        .limit(50),
       this.fetchAudit(),
     ])
     const co = check(company) as { id: string; name: string; timezone: string; currency: 'BRL' }
@@ -106,7 +133,20 @@ export class SupabaseRepository implements FinanceRepository {
         ]),
       ),
       audit,
-      imports: (check(imports) as { id: string; file_name: string; file_hash: string; actor: string | null; total_rows: number; imported: number; skipped: number; errors: number; warnings: number; created_at: string }[]).map((i) => ({
+      imports: (
+        check(imports) as {
+          id: string
+          file_name: string
+          file_hash: string
+          actor: string | null
+          total_rows: number
+          imported: number
+          skipped: number
+          errors: number
+          warnings: number
+          created_at: string
+        }[]
+      ).map((i) => ({
         id: i.id,
         fileName: i.file_name,
         fileHash: i.file_hash,
@@ -118,7 +158,17 @@ export class SupabaseRepository implements FinanceRepository {
         errors: i.errors,
         warnings: i.warnings,
       })),
-      scenarios: (check(scenarios) as { id: string; name: string; horizon_days: number; decisions: SavedScenario['decisions']; as_of: string; result_summary: SavedScenario['resultSummary']; created_at: string }[]).map((s) => ({
+      scenarios: (
+        check(scenarios) as {
+          id: string
+          name: string
+          horizon_days: number
+          decisions: SavedScenario['decisions']
+          as_of: string
+          result_summary: SavedScenario['resultSummary']
+          created_at: string
+        }[]
+      ).map((s) => ({
         id: s.id,
         name: s.name,
         horizonDays: s.horizon_days,
@@ -144,7 +194,11 @@ export class SupabaseRepository implements FinanceRepository {
 
   async createTransaction(input: ValidTransaction): Promise<Transaction> {
     const row = check(
-      await this.sb.from('transactions').insert({ ...transactionToRow(input), company_id: this.companyId }).select(TX_COLUMNS).single(),
+      await this.sb
+        .from('transactions')
+        .insert({ ...transactionToRow(input), company_id: this.companyId })
+        .select(TX_COLUMNS)
+        .single(),
     ) as unknown as TxRow
     const tx = rowToTransaction(row)
     const s = await this.state()
@@ -175,34 +229,107 @@ export class SupabaseRepository implements FinanceRepository {
   }
 
   async importTransactions(rows: ValidTransaction[], meta: Omit<ImportRecord, 'id' | 'at' | 'actor'>): Promise<ImportRecord> {
-    const payload = rows.map((r) => ({
-      kind: r.kind,
-      status: r.status,
-      description: r.description,
-      counterparty: r.counterparty ?? null,
-      category_id: r.categoryId,
-      account_id: r.accountId,
-      amount: centsToNumeric(r.amount),
-      competence_date: r.competenceDate,
-      due_date: r.dueDate,
-      settled_date: r.settledDate,
-      notes: r.notes ?? null,
-      source_ref: r.sourceRef ?? null,
-    }))
-    const importId = check(
-      await this.sb.rpc('import_transactions', {
-        p_company: this.companyId,
-        p_file_name: meta.fileName,
-        p_file_hash: meta.fileHash,
-        p_rows: payload,
-        p_stats: { total_rows: meta.totalRows, skipped: meta.skipped, errors: meta.errors, warnings: meta.warnings },
-      }),
-    ) as string
+    // A validação autoritativa e o limite de requisições ficam na Edge Function. Enviamos os
+    // centavos como inteiros: a função converte para NUMERIC(14,2) sem float.
+    const { data, error } = await this.sb.functions.invoke('import-transactions', {
+      body: {
+        companyId: this.companyId,
+        fileName: meta.fileName,
+        fileHash: meta.fileHash,
+        stats: { totalRows: meta.totalRows, skipped: meta.skipped, errors: meta.errors, warnings: meta.warnings },
+        rows,
+      },
+    })
+    if (error) throw new RepositoryError(await functionsErrorMessage(error))
+    const importId = (data as { importId?: unknown } | null)?.importId
+    if (typeof importId !== 'string' || !importId) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
     // Recarrega tudo: a importação pode trazer milhares de linhas criadas no servidor.
     this.cache = await this.fetchAll()
     const rec = this.cache.imports.find((i) => i.id === importId)
     if (!rec) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
     return rec
+  }
+
+  async getAccountBalances(asOf: string): Promise<AccountBalance[]> {
+    const [s, rows] = await Promise.all([this.state(), this.sb.rpc('company_balances', { p_company: this.companyId, p_as_of: asOf })])
+    const balances = check(rows) as { account_id: string; balance: string | number; settled_count: number }[]
+    const byAccount = new Map(balances.map((b) => [b.account_id, b]))
+    return s.accounts
+      .filter((a) => byAccount.has(a.id))
+      .map((account) => {
+        const b = byAccount.get(account.id)!
+        return { account: structuredClone(account), balance: numericToCents(b.balance), settledCount: b.settled_count }
+      })
+  }
+
+  async getMonthlyEvolution(asOf: string, months = 6): Promise<MonthPoint[]> {
+    const rows = check(await this.sb.rpc('monthly_evolution', { p_company: this.companyId, p_as_of: asOf, p_months: months })) as {
+      month: string
+      cash_in: string | number
+      cash_out: string | number
+      net: string | number
+      end_balance: string | number
+    }[]
+    return rows.map((r) => ({
+      month: r.month,
+      cashIn: numericToCents(r.cash_in),
+      cashOut: numericToCents(r.cash_out),
+      net: numericToCents(r.net),
+      endBalance: numericToCents(r.end_balance),
+    }))
+  }
+
+  async getBaseProjection(asOf: string, horizonDays: number): Promise<BaseProjection> {
+    const rows = check(await this.sb.rpc('base_projection', { p_company: this.companyId, p_as_of: asOf, p_days: horizonDays })) as BaseProjectionRow[]
+    const first = rows[0]
+    if (!first) throw new RepositoryError('Empresa não encontrada ou sem acesso.')
+    const day = (r: BaseProjectionRow) => ({
+      date: r.day,
+      inflow: numericToCents(r.inflow),
+      outflow: numericToCents(r.outflow),
+      balance: numericToCents(r.balance),
+    })
+    return {
+      asOf,
+      endDate: addDays(asOf, horizonDays - 1),
+      horizonDays,
+      startBalance: numericToCents(first.start_balance),
+      endBalance: numericToCents(first.end_balance),
+      totalIn: numericToCents(first.total_in),
+      totalOut: numericToCents(first.total_out),
+      minBalance: numericToCents(first.min_balance),
+      minDate: first.min_date,
+      firstNegativeDate: first.first_negative_date,
+      negativeDays: first.negative_days,
+      lastInflowDate: first.last_inflow_date,
+      days: rows.map(day),
+      pressureDays: rows
+        .filter((r) => r.pressure_rank !== null)
+        .sort((a, b) => (a.pressure_rank ?? 0) - (b.pressure_rank ?? 0))
+        .map(day),
+      excluded: {
+        overdueReceivables: { amount: numericToCents(first.overdue_receivables_amount), count: first.overdue_receivables_count },
+        beyondHorizon: { amount: numericToCents(first.beyond_horizon_amount), count: first.beyond_horizon_count },
+      },
+    }
+  }
+
+  async requestAnalysis(agent: Parameters<FinanceRepository['requestAnalysis']>[0]): Promise<AiAnalysisResponse> {
+    const { data, error } = await this.sb.functions.invoke('ai-analysis', { body: { companyId: this.companyId, agent } })
+    if (error) throw new RepositoryError(await aiFunctionsErrorMessage(error))
+    const result = data as Partial<AiAnalysisResponse> | null
+    if (!result || typeof result !== 'object' || !result.analysis || !result.facts || !result.review) {
+      throw new RepositoryError('Resposta inválida do servidor de análises.')
+    }
+    return {
+      analysis: result.analysis,
+      facts: result.facts,
+      review: result.review,
+      status: result.review.valid ? 'ok' : 'rejected',
+      cached: !!result.cached,
+      provider: typeof result.provider === 'string' ? result.provider : undefined,
+      model: typeof result.model === 'string' ? result.model : undefined,
+    }
   }
 
   async setAlertState(fingerprint: string, state: AlertState, note?: string) {
@@ -240,7 +367,11 @@ export class SupabaseRepository implements FinanceRepository {
 
   async addCategory(c: Omit<Category, 'id'>): Promise<Category> {
     const row = check(
-      await this.sb.from('categories').insert({ company_id: this.companyId, name: c.name, kind: c.kind, fixed: !!c.fixed }).select('id,name,kind,fixed').single(),
+      await this.sb
+        .from('categories')
+        .insert({ company_id: this.companyId, name: c.name, kind: c.kind, fixed: !!c.fixed })
+        .select('id,name,kind,fixed')
+        .single(),
     ) as Category
     const s = await this.state()
     s.categories = [...s.categories, row]
@@ -248,11 +379,63 @@ export class SupabaseRepository implements FinanceRepository {
     return row
   }
 
+  async updateCompanyName(name: string): Promise<Company> {
+    const valid = validateCompanyName(name)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // Nunca envie company_id no payload: a empresa é identificada apenas pelo filtro e pelo RLS.
+    const rows = check(await this.sb.from('companies').update({ name: valid.value }).eq('id', this.companyId).select('id,name,timezone,currency')) as {
+      id: string
+      name: string
+      timezone: string
+      currency: 'BRL'
+    }[]
+    // RLS bloqueia UPDATE silenciosamente (0 linhas) em vez de gerar erro.
+    if (!rows.length) throw new RepositoryError('Empresa não encontrada ou sem permissão para editar.')
+    const row = rows[0]
+    const s = await this.state()
+    s.company = { ...s.company, id: row.id, name: row.name, timezone: row.timezone, currency: row.currency }
+    await this.refreshAudit()
+    return structuredClone(s.company)
+  }
+
+  async updateAccountOpeningBalance(accountId: string, openingBalance: Cents): Promise<Account> {
+    const valid = validateOpeningBalance(openingBalance)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // A conta é localizada pelo filtro; company_id jamais vai no payload de alteração.
+    const rows = check(
+      await this.sb
+        .from('accounts')
+        .update({ opening_balance: centsToNumeric(valid.value) })
+        .eq('id', accountId)
+        .eq('company_id', this.companyId)
+        .select('id,name,opening_balance,opening_date'),
+    ) as { id: string; name: string; opening_balance: string; opening_date: string }[]
+    if (!rows.length) throw new RepositoryError('Conta não encontrada ou sem permissão para editar.')
+    const row = rows[0]
+    const account: Account = {
+      id: row.id,
+      name: row.name,
+      openingBalance: numericToCents(row.opening_balance),
+      openingDate: row.opening_date,
+    }
+    const s = await this.state()
+    s.accounts = s.accounts.map((a) => (a.id === accountId ? account : a))
+    await this.refreshAudit()
+    return structuredClone(account)
+  }
+
   async saveScenario(sc: Omit<SavedScenario, 'id' | 'createdAt'>): Promise<SavedScenario> {
     const row = check(
       await this.sb
         .from('scenarios')
-        .insert({ company_id: this.companyId, name: sc.name, horizon_days: sc.horizonDays, decisions: sc.decisions, as_of: sc.asOf, result_summary: sc.resultSummary })
+        .insert({
+          company_id: this.companyId,
+          name: sc.name,
+          horizon_days: sc.horizonDays,
+          decisions: sc.decisions,
+          as_of: sc.asOf,
+          result_summary: sc.resultSummary,
+        })
         .select('id,created_at')
         .single(),
     ) as { id: string; created_at: string }
@@ -269,8 +452,172 @@ export class SupabaseRepository implements FinanceRepository {
     s.scenarios = s.scenarios.filter((x) => x.id !== id)
   }
 
+  async listMembers(): Promise<CompanyMember[]> {
+    const rows = check(await this.sb.from('company_members').select('user_id,role,created_at').eq('company_id', this.companyId).order('created_at')) as {
+      user_id: string
+      role: MemberRole
+      created_at: string
+    }[]
+    const ids = rows.map((r) => r.user_id)
+    const names = new Map<string, string>()
+    if (ids.length) {
+      const profiles = check(await this.sb.from('profiles').select('id,full_name').in('id', ids)) as { id: string; full_name: string }[]
+      for (const p of profiles) names.set(p.id, p.full_name || 'Usuário')
+    }
+    return rows.map((r) => ({ userId: r.user_id, name: names.get(r.user_id) ?? 'Usuário', role: r.role, joinedAt: r.created_at }))
+  }
+
+  async listInvites(): Promise<CompanyInvite[]> {
+    const rows = check(
+      await this.sb
+        .from('company_invites')
+        .select('id,email,role,created_at,expires_at,accepted_at,revoked_at')
+        .eq('company_id', this.companyId)
+        .order('created_at', { ascending: false }),
+    ) as InviteRow[]
+    return rows.map(rowToInvite)
+  }
+
+  async createInvite(input: CreateInviteInput): Promise<CompanyInvite> {
+    const email = validateInviteEmail(input.email)
+    if (!email.ok) throw new RepositoryError(email.error)
+    const role = validateInviteRole(input.role)
+    if (!role.ok) throw new RepositoryError(role.error)
+    const created = check(await this.sb.rpc('create_invite', { p_company: this.companyId, p_email: email.value, p_role: role.value })) as {
+      id: string
+      token: string
+    }
+    const now = new Date()
+    return {
+      id: created.id,
+      email: email.value,
+      role: role.value,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      acceptedAt: null,
+      revokedAt: null,
+      token: created.token,
+    }
+  }
+
+  async revokeInvite(id: string): Promise<void> {
+    check(await this.sb.rpc('revoke_invite', { p_invite: id }))
+  }
+
+  async updateMemberRole(userId: string, role: InviteRole): Promise<CompanyMember> {
+    const valid = validateInviteRole(role)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // A política do banco impede tocar na linha do owner; o filtro repete a regra no cliente.
+    const rows = check(
+      await this.sb
+        .from('company_members')
+        .update({ role: valid.value })
+        .eq('company_id', this.companyId)
+        .eq('user_id', userId)
+        .neq('role', 'owner')
+        .select('user_id,role,created_at'),
+    ) as { user_id: string; role: MemberRole; created_at: string }[]
+    // RLS não gera erro ao bloquear: 0 linhas significa sem permissão, owner ou membro inexistente.
+    if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para alterar.')
+    return (
+      (await this.listMembers()).find((m) => m.userId === userId) ?? {
+        userId: rows[0].user_id,
+        name: 'Usuário',
+        role: rows[0].role,
+        joinedAt: rows[0].created_at,
+      }
+    )
+  }
+
+  async removeMember(userId: string): Promise<void> {
+    const rows = check(
+      await this.sb.from('company_members').delete().eq('company_id', this.companyId).eq('user_id', userId).neq('role', 'owner').select('user_id'),
+    ) as { user_id: string }[]
+    if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para remover.')
+  }
+
   async reset(): Promise<CompanySnapshot> {
     throw new RepositoryError('Reinicializar está disponível apenas no modo de demonstração.')
+  }
+}
+
+interface BaseProjectionRow {
+  day: string
+  inflow: string | number
+  outflow: string | number
+  balance: string | number
+  pressure_rank: number | null
+  start_balance: string | number
+  end_balance: string | number
+  total_in: string | number
+  total_out: string | number
+  min_balance: string | number
+  min_date: string
+  first_negative_date: string | null
+  negative_days: number
+  last_inflow_date: string | null
+  overdue_receivables_amount: string | number
+  overdue_receivables_count: number
+  beyond_horizon_amount: string | number
+  beyond_horizon_count: number
+}
+
+async function aiFunctionsErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context
+  if (context && typeof context === 'object' && typeof (context as Response).json === 'function') {
+    const response = context as Response
+    try {
+      const body = (await response.json()) as { error?: unknown }
+      if (typeof body.error === 'string' && body.error.length <= 200) return body.error
+    } catch {
+      // Corpo indisponível: usa o status abaixo.
+    }
+    if (response.status === 429) return 'Limite de análises de IA atingido. Tente novamente mais tarde.'
+    if (response.status === 503) return 'IA não configurada neste ambiente.'
+  }
+  return 'Não foi possível gerar a análise. Tente novamente.'
+}
+
+/** Mensagem da Edge Function sem expor detalhes internos; erros de linha vêm da validação pura. */
+async function functionsErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context
+  if (context && typeof context === 'object' && typeof (context as Response).json === 'function') {
+    try {
+      const body = (await (context as Response).json()) as { error?: unknown; errors?: { line?: unknown; message?: unknown }[] }
+      if (Array.isArray(body.errors) && body.errors.length) {
+        const lines = body.errors
+          .filter((e) => e && typeof e.message === 'string')
+          .slice(0, 10)
+          .map((e) => `Linha ${typeof e.line === 'number' ? e.line : '?'}: ${e.message}`)
+        if (lines.length) return lines.join(' ')
+      }
+      if (typeof body.error === 'string' && body.error.length <= 200) return body.error
+    } catch {
+      // Corpo indisponível: usa a mensagem genérica.
+    }
+  }
+  return 'Não foi possível concluir a importação. Tente novamente.'
+}
+
+interface InviteRow {
+  id: string
+  email: string
+  role: InviteRole
+  created_at: string
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+}
+
+function rowToInvite(r: InviteRow): CompanyInvite {
+  return {
+    id: r.id,
+    email: r.email,
+    role: r.role,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    acceptedAt: r.accepted_at,
+    revokedAt: r.revoked_at,
   }
 }
 

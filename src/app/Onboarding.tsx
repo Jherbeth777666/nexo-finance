@@ -1,13 +1,15 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { Logo } from '@/components/icons'
 import { Button, Field, Input, Notice } from '@/components/ui'
 import { AuthError, useAuth } from '@/features/auth/session'
+import { readPendingInvite } from '@/features/invites/pendingInvite'
 import { parseMoney } from '@/lib/money'
 
 /** Usuário autenticado sem empresa: cria a primeira (a função do banco cria dono, conta e categorias). */
 export function Onboarding() {
   const auth = useAuth()
+  const navigate = useNavigate()
   const [name, setName] = useState(() => {
     try {
       return localStorage.getItem('nexo.pendingCompany') ?? ''
@@ -18,6 +20,12 @@ export function Onboarding() {
   const [balance, setBalance] = useState('')
   const [errors, setErrors] = useState<{ name?: string; balance?: string; form?: string }>({})
   const [busy, setBusy] = useState(false)
+
+  // Quem chegou por convite não deve criar uma empresa antes de aceitar o convite.
+  useEffect(() => {
+    const token = readPendingInvite()
+    if (token) navigate(`/convite/${encodeURIComponent(token)}`, { replace: true })
+  }, [navigate])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,8 +59,21 @@ export function Onboarding() {
           <Field label="Nome da empresa" htmlFor="ob-name" error={errors.name}>
             <Input id="ob-name" value={name} maxLength={120} invalid={!!errors.name} onChange={(e) => setName(e.target.value)} autoFocus />
           </Field>
-          <Field label="Saldo atual da conta principal (R$)" htmlFor="ob-balance" error={errors.balance} hint="Ponto de partida rastreável do saldo e das projeções. Pode ser zero.">
-            <Input id="ob-balance" inputMode="decimal" className="num" placeholder="0,00" value={balance} invalid={!!errors.balance} onChange={(e) => setBalance(e.target.value)} />
+          <Field
+            label="Saldo atual da conta principal (R$)"
+            htmlFor="ob-balance"
+            error={errors.balance}
+            hint="Ponto de partida rastreável do saldo e das projeções. Pode ser zero."
+          >
+            <Input
+              id="ob-balance"
+              inputMode="decimal"
+              className="num"
+              placeholder="0,00"
+              value={balance}
+              invalid={!!errors.balance}
+              onChange={(e) => setBalance(e.target.value)}
+            />
           </Field>
           {errors.form && <Notice tone="risk">{errors.form}</Notice>}
           <Button type="submit" variant="primary" className="w-full" loading={busy}>

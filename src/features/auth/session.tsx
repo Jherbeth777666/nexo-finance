@@ -25,7 +25,7 @@ interface AuthValue {
   setActiveCompany: (id: string) => void
   client: SupabaseClient | null
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (p: { email: string; password: string; name: string; company: string }) => Promise<'signed_in' | 'confirm_email'>
+  signUp: (p: { email: string; password: string; name: string; company?: string }) => Promise<'signed_in' | 'confirm_email'>
   signOut: () => Promise<void>
   requestPasswordReset: (email: string) => Promise<void>
   updatePassword: (password: string) => Promise<void>
@@ -114,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
       unsub?.()
     }
+    // Inicialização única por configuração; status só serve de guarda de entrada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configured])
 
   const setActiveCompany = useCallback((id: string) => {
@@ -148,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signUp({ email, password, name, company }) {
         requireConfigured()
         const sb = await ensureClient()
+        const desiredCompany = company?.trim() ?? ''
         const { data, error } = await sb.auth.signUp({
           email: email.trim(),
           password,
@@ -156,18 +159,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) throw new AuthError(authMessage(error))
         // Com confirmação de e-mail ativa, não há sessão: a empresa é criada no primeiro acesso.
         if (!data.session) {
-          try {
-            localStorage.setItem('nexo.pendingCompany', company.trim())
-          } catch {
-            /* opcional */
+          if (desiredCompany) {
+            try {
+              localStorage.setItem('nexo.pendingCompany', desiredCompany)
+            } catch {
+              /* opcional */
+            }
+          } else {
+            try {
+              localStorage.removeItem('nexo.pendingCompany')
+            } catch {
+              /* opcional */
+            }
           }
           return 'confirm_email'
         }
-        const { data: id, error: e2 } = await sb.rpc('create_company', { p_name: company.trim() })
-        if (e2) throw new AuthError(friendlyDbError(e2))
+        // Convidado não cria empresa: o vínculo vem do aceite do convite.
+        let companyId: string | null = null
+        if (desiredCompany) {
+          const { data: id, error: e2 } = await sb.rpc('create_company', { p_name: desiredCompany })
+          if (e2) throw new AuthError(friendlyDbError(e2))
+          companyId = id as string
+        }
         setUser(data.user)
         await loadMemberships(sb, data.user)
-        setActiveCompany(id as string)
+        if (companyId) setActiveCompany(companyId)
         setStatus('signed_in')
         return 'signed_in'
       },

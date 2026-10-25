@@ -24,18 +24,18 @@ Nenhuma variável de ambiente é necessária para o modo de demonstração. Para
 
 ## Rotas
 
-| Rota | Conteúdo |
-|---|---|
-| `/` | Página pública, com prévia calculada pelo motor real sobre dados fictícios |
+| Rota                                      | Conteúdo                                                                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                       | Página pública, com prévia calculada pelo motor real sobre dados fictícios                                                            |
 | `/login`, `/cadastro`, `/redefinir-senha` | Supabase Auth (cadastro cria a empresa; recuperação por e-mail). Sem Supabase configurado, informam que o serviço não está disponível |
-| `/app/overview` | Central de decisões: situação atual, o que merece atenção, próxima decisão, evolução |
-| `/app/movimentacoes` | Lançamentos: busca (atalho `/`), filtros, paginação, criar/editar/excluir, histórico |
-| `/app/fluxo-de-caixa` | Projeção 7/30/90 dias, cenários base/conservador/personalizado, premissas e rastreabilidade |
-| `/app/inteligencia` | Alertas com evidências, estados (novo/em análise/resolvido/ignorado), exemplo de análise + revisor |
-| `/app/simulador` | Decisões combinadas, comparação atual × alternativo, cenários salvos |
-| `/app/relatorios` | 6 relatórios com prévia, CSV e PDF (impressão) |
-| `/app/importacoes` | Importação CSV/XLSX em etapas com mapeamento, validação, duplicatas e histórico |
-| `/app/configuracoes` | Contas, categorias, limites de alertas, integrações, reinicializar demonstração, registro de ações |
+| `/app/overview`                           | Central de decisões: situação atual, o que merece atenção, próxima decisão, evolução                                                  |
+| `/app/movimentacoes`                      | Lançamentos: busca (atalho `/`), filtros, paginação, criar/editar/excluir, histórico                                                  |
+| `/app/fluxo-de-caixa`                     | Projeção 7/30/90 dias, cenários base/conservador/personalizado, premissas e rastreabilidade                                           |
+| `/app/inteligencia`                       | Alertas com evidências, estados (novo/em análise/resolvido/ignorado), exemplo de análise + revisor                                    |
+| `/app/simulador`                          | Decisões combinadas, comparação atual × alternativo, cenários salvos                                                                  |
+| `/app/relatorios`                         | 6 relatórios com prévia, CSV e PDF (impressão)                                                                                        |
+| `/app/importacoes`                        | Importação CSV/XLSX em etapas com mapeamento, validação, duplicatas e histórico                                                       |
+| `/app/configuracoes`                      | Contas, categorias, limites de alertas, integrações, reinicializar demonstração, registro de ações                                    |
 
 ## Estrutura
 

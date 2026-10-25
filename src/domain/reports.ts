@@ -75,7 +75,8 @@ export function buildReport(
         const p = projectCashflow({ accounts: data.accounts, transactions: data.transactions, asOf: today, horizonDays: horizon, assumptions: BASE_SCENARIO })
         for (const day of p.days) {
           if (day.date < start || (day.date === today && start <= today)) continue
-          if (day.inflow || day.outflow) rows.push({ date: formatDateBR(day.date), type: 'Projetado', inflow: day.inflow, outflow: day.outflow, balance: day.balance })
+          if (day.inflow || day.outflow)
+            rows.push({ date: formatDateBR(day.date), type: 'Projetado', inflow: day.inflow, outflow: day.outflow, balance: day.balance })
         }
       }
       return {

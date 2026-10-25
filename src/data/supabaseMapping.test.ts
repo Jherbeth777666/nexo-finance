@@ -65,7 +65,9 @@ describe('mapeamento de lançamento', () => {
 describe('mensagens de erro do banco', () => {
   it('não expõem detalhes internos', () => {
     expect(friendlyDbError({ code: '42501', message: 'new row violates row-level security policy for table "transactions"' })).toMatch(/permissão/)
-    expect(friendlyDbError({ code: '23514', message: 'new row for relation "transactions" violates check constraint "x"' })).toBe('Os dados não passaram na validação do servidor.')
+    expect(friendlyDbError({ code: '23514', message: 'new row for relation "transactions" violates check constraint "x"' })).toBe(
+      'Os dados não passaram na validação do servidor.',
+    )
     expect(friendlyDbError({ code: '23514', message: 'Data de liquidação não pode estar no futuro' })).toBe('Data de liquidação não pode estar no futuro')
     expect(friendlyDbError({ code: 'XX000', message: 'segredo interno' })).not.toMatch(/segredo/)
   })
@@ -86,7 +88,10 @@ describe('linhas idênticas no mesmo arquivo', () => {
     expect(refs[1]).toBe(`${refs[0]}#2`)
     expect(rows[2].warnings.join()).toMatch(/Igual à linha 2/)
     // Reimportar o mesmo conteúdo reconhece as três linhas.
-    const again = validateRows(t, suggestMapping(t.headers), { ...ctx, existing: rows.map((r, i) => ({ ...r.tx!, id: `e${i}`, accountId: 'a', source: 'import' as const, createdAt: '', updatedAt: '' })) })
+    const again = validateRows(t, suggestMapping(t.headers), {
+      ...ctx,
+      existing: rows.map((r, i) => ({ ...r.tx!, id: `e${i}`, accountId: 'a', source: 'import' as const, createdAt: '', updatedAt: '' })),
+    })
     expect(again.every((r) => r.alreadyImported)).toBe(true)
   })
 })

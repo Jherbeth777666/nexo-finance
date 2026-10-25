@@ -172,12 +172,7 @@ export interface MonthPoint {
 }
 
 /** Evolução mensal em regime de caixa (dados agregados — o gráfico nunca recebe lançamentos brutos). */
-export function monthlyEvolution(
-  accounts: Account[],
-  txs: Transaction[],
-  asOf: ISODate,
-  months = 6,
-): MonthPoint[] {
+export function monthlyEvolution(accounts: Account[], txs: Transaction[], asOf: ISODate, months = 6): MonthPoint[] {
   const [y, m] = asOf.split('-').map(Number)
   const keys: string[] = []
   for (let i = months - 1; i >= 0; i--) {
@@ -217,8 +212,7 @@ export const METRIC_DEFINITIONS = {
   cashOut: 'Regime de caixa: despesas efetivamente pagas (data de liquidação) no período.',
   operatingResult:
     'Regime de competência simplificado: receitas menos despesas com competência no período, liquidadas ou não. Exclui transferências. Não é lucro contábil e não substitui a apuração do seu contador.',
-  delinquency:
-    'Dos recebimentos que venceram nos últimos 90 dias, a parcela que continua em aberto.',
+  delinquency: 'Dos recebimentos que venceram nos últimos 90 dias, a parcela que continua em aberto.',
   projectedCash:
     'Saldo registrado hoje somado aos recebimentos e pagamentos pendentes até o fim do horizonte, segundo as premissas do cenário. É uma estimativa, não uma garantia.',
 } as const

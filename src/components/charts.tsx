@@ -116,7 +116,14 @@ export function ProjectionChart({
         </defs>
         {geo.ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.left} x2={W - pad.right} y1={geo.y(t)} y2={geo.y(t)} stroke={t === 0 ? '#5a6577' : '#232b37'} strokeDasharray={t === 0 ? undefined : '2 4'} />
+            <line
+              x1={pad.left}
+              x2={W - pad.right}
+              y1={geo.y(t)}
+              y2={geo.y(t)}
+              stroke={t === 0 ? '#5a6577' : '#232b37'}
+              strokeDasharray={t === 0 ? undefined : '2 4'}
+            />
             <text x={pad.left - 8} y={geo.y(t)} dy="0.32em" textAnchor="end" className="num fill-ink-3 text-[10.5px]">
               {formatBRLCompact(t)}
             </text>
@@ -137,11 +144,24 @@ export function ProjectionChart({
         <path d={geo.path} fill="none" stroke="#f07878" strokeWidth={2} clipPath={`url(#${clipId}-below)`} />
         {hi >= 0 && (
           <g>
-            <circle cx={geo.x(hi)} cy={geo.y(points[hi].balance)} r={4} fill="#101319" stroke={points[hi].balance < 0 ? '#f07878' : '#f0b95a'} strokeWidth={2} />
+            <circle
+              cx={geo.x(hi)}
+              cy={geo.y(points[hi].balance)}
+              r={4}
+              fill="#101319"
+              stroke={points[hi].balance < 0 ? '#f07878' : '#f0b95a'}
+              strokeWidth={2}
+            />
           </g>
         )}
         {xTickIdx.map((i) => (
-          <text key={i} x={geo.x(i)} y={H - 6} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} className="num fill-ink-3 text-[10.5px]">
+          <text
+            key={i}
+            x={geo.x(i)}
+            y={H - 6}
+            textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
+            className="num fill-ink-3 text-[10.5px]"
+          >
             {formatDayMonth(points[i].date)}
           </text>
         ))}
@@ -169,7 +189,7 @@ export function ProjectionChart({
               <span className="num">{formatBRL(compare[hover].balance)}</span>
             </p>
           )}
-          {(hp.inflow || hp.outflow) ? (
+          {hp.inflow || hp.outflow ? (
             <p className="mt-1 flex justify-between gap-4 border-t border-line-soft pt-1 text-ink-3">
               <span className="num text-pos">+{formatBRLCompact(hp.inflow ?? 0)}</span>
               <span className="num">−{formatBRLCompact(hp.outflow ?? 0)}</span>

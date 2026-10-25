@@ -1,10 +1,11 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { DataProvider, useStore } from '@/data/store'
 import { DemoRepository } from '@/data/demoRepository'
 import { SupabaseRepository } from '@/data/supabaseRepository'
 import type { FinanceRepository } from '@/data/repository'
 import { useAuth } from '@/features/auth/session'
+import { readPendingInvite } from '@/features/invites/pendingInvite'
 import { Onboarding } from './Onboarding'
 import { Icon, Logo, type IconName } from '@/components/icons'
 import { Button, EmptyState, Tag, cx } from '@/components/ui'
@@ -37,6 +38,7 @@ const readDemoPref = () => {
  */
 export default function AppShell() {
   const auth = useAuth()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [demoPref, setDemoPref] = useState(readDemoPref)
 
@@ -52,12 +54,20 @@ export default function AppShell() {
     setParams(params, { replace: true })
   }, [params, setParams])
 
+  // Convite pendente tem prioridade: aceitar antes de entrar na empresa/onboarding.
+  useEffect(() => {
+    if (auth.status !== 'signed_in' || demoPref) return
+    const token = readPendingInvite()
+    if (token) navigate(`/convite/${encodeURIComponent(token)}`, { replace: true })
+  }, [auth.status, demoPref, navigate])
+
   const live = auth.status === 'signed_in' && !demoPref
   const membership = auth.memberships.find((m) => m.companyId === auth.activeCompanyId) ?? null
   const repoKey = live ? `live:${membership?.companyId ?? 'none'}` : 'demo'
   const repo = useMemo<FinanceRepository | null>(
     () => (live ? (membership && auth.client ? new SupabaseRepository(auth.client, membership.companyId, membership.role) : null) : new DemoRepository()),
     // Um repositório por empresa/modo; recriar só quando a chave muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- repoKey resume live e membership de propósito
     [repoKey, auth.client],
   )
 
@@ -96,7 +106,10 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
 
   return (
     <div className="min-h-screen bg-bg">
-      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface-3 focus:px-3 focus:py-2">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface-3 focus:px-3 focus:py-2"
+      >
         Pular para o conteúdo
       </a>
 
@@ -179,7 +192,10 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
       </div>
 
       {/* Barra inferior (móvel) */}
-      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-[#0d1015]/95 backdrop-blur-sm lg:hidden">
+      <nav
+        aria-label="Navegação principal"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-[#0d1015]/95 backdrop-blur-sm lg:hidden"
+      >
         {NAV.slice(0, 4).map((n) => (
           <NavLink
             key={n.to}

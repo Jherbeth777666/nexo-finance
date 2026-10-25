@@ -120,7 +120,13 @@ export default function ImportsPage() {
 
   const summary = useMemo(() => summarize(rows), [rows])
   const visible = rows.filter((r) =>
-    filter === 'errors' ? r.errors.length : filter === 'warnings' ? r.tx && r.warnings.length : filter === 'dups' ? r.alreadyImported || r.possibleDuplicateOf : true,
+    filter === 'errors'
+      ? r.errors.length
+      : filter === 'warnings'
+        ? r.tx && r.warnings.length
+        : filter === 'dups'
+          ? r.alreadyImported || r.possibleDuplicateOf
+          : true,
   )
 
   const doImport = async () => {
@@ -210,7 +216,8 @@ export default function ImportsPage() {
             <Icon name="upload" size={22} className="mb-3 text-ink-3" />
             <span className="text-sm font-medium text-ink">{busy ? 'Lendo arquivo…' : 'Arraste o arquivo aqui ou clique para escolher'}</span>
             <span className="mt-1 text-xs text-ink-3">
-              .csv ou .xlsx · até {IMPORT_LIMITS.maxBytes / 1024 / 1024} MB · até {IMPORT_LIMITS.maxRows.toLocaleString('pt-BR')} linhas · UTF-8 ou Windows-1252 · separador vírgula ou ponto e vírgula
+              .csv ou .xlsx · até {IMPORT_LIMITS.maxBytes / 1024 / 1024} MB · até {IMPORT_LIMITS.maxRows.toLocaleString('pt-BR')} linhas · UTF-8 ou Windows-1252
+              · separador vírgula ou ponto e vírgula
             </span>
             <input
               ref={inputRef}
@@ -230,7 +237,8 @@ export default function ImportsPage() {
             </Notice>
           )}
           <p className="mt-4 text-xs text-ink-3">
-            O arquivo é lido no seu navegador e nunca é executado: fórmulas são lidas pelo valor, macros são ignoradas. No modo de demonstração nada é enviado a servidores.
+            O arquivo é lido no seu navegador e nunca é executado: fórmulas são lidas pelo valor, macros são ignoradas. No modo de demonstração nada é enviado a
+            servidores.
           </p>
         </Panel>
       )}
@@ -247,7 +255,8 @@ export default function ImportsPage() {
         >
           {file.previous && (
             <Notice tone="warn" title="Este arquivo já foi importado" className="mb-4">
-              Conteúdo idêntico importado em {new Date(file.previous.at).toLocaleString('pt-BR')}. Linhas já importadas serão desmarcadas automaticamente na revisão.
+              Conteúdo idêntico importado em {new Date(file.previous.at).toLocaleString('pt-BR')}. Linhas já importadas serão desmarcadas automaticamente na
+              revisão.
             </Notice>
           )}
           <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -293,8 +302,8 @@ export default function ImportsPage() {
           </div>
           <div className="mt-4 rounded-md border border-line-soft bg-surface-2/50 p-3 text-xs text-ink-2">
             <p>
-              <strong className="text-ink">Regras:</strong> sem coluna de tipo, valores negativos viram despesa e positivos, receita. Sem coluna de situação, datas futuras viram pendentes e
-              passadas, liquidadas (com aviso). Categorias inexistentes ficam em branco — nada é criado automaticamente.
+              <strong className="text-ink">Regras:</strong> sem coluna de tipo, valores negativos viram despesa e positivos, receita. Sem coluna de situação,
+              datas futuras viram pendentes e passadas, liquidadas (com aviso). Categorias inexistentes ficam em branco — nada é criado automaticamente.
             </p>
           </div>
           {mappingIssues.length > 0 && (
@@ -391,7 +400,13 @@ export default function ImportsPage() {
                         <td className="num px-2 py-2 text-ink-3">{r.index}</td>
                         <td className="num px-2 py-2 whitespace-nowrap">{r.tx ? formatDateBR(r.tx.competenceDate) : '—'}</td>
                         <td className="max-w-56 truncate px-2 py-2">{r.tx?.description ?? r.raw.filter(Boolean).join(' · ').slice(0, 80)}</td>
-                        <td className="px-2 py-2 text-right">{r.tx ? <Money value={r.tx.kind === 'expense' ? -r.tx.amount : r.tx.amount} signed className={r.tx.kind === 'income' ? 'text-pos' : ''} /> : '—'}</td>
+                        <td className="px-2 py-2 text-right">
+                          {r.tx ? (
+                            <Money value={r.tx.kind === 'expense' ? -r.tx.amount : r.tx.amount} signed className={r.tx.kind === 'income' ? 'text-pos' : ''} />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-xs sm:px-5">
                           {r.errors.map((m) => (
                             <span key={m} className="block text-risk">
