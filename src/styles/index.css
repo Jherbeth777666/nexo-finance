@@ -1,0 +1,143 @@
+@import 'tailwindcss';
+
+/*
+ * Nexo Finance — tokens visuais.
+ * Cor comunica significado: verde = resultado positivo, âmbar = atenção, vermelho = risco,
+ * azul acinzentado = interação/neutro. Nada de cor decorativa.
+ */
+@theme {
+  --color-bg: #101319;
+  --color-surface: #171d27;
+  --color-surface-2: #1d2531;
+  --color-surface-3: #242d3b;
+  --color-line: #303947;
+  --color-line-soft: #232b37;
+  --color-ink: #f1f4f8;
+  --color-ink-2: #a4afbf;
+  --color-ink-3: #7f8a9b;
+  --color-pos: #57d6a0;
+  --color-pos-soft: #57d6a01a;
+  --color-warn: #f0b95a;
+  --color-warn-soft: #f0b95a1a;
+  --color-risk: #f07878;
+  --color-risk-soft: #f078781f;
+  --color-accent: #93a8c9;
+  --color-accent-soft: #93a8c91f;
+
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: #93a8c955;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  button,
+  [role='button'],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  /* calendário nativo legível no tema escuro */
+  input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(0.75);
+  }
+  dialog::backdrop {
+    background: rgb(8 10 14 / 0.72);
+  }
+}
+
+@layer components {
+  /* Números: sempre tabulares para alinhar colunas de valores. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'cv11', 'ss01';
+    letter-spacing: -0.01em;
+  }
+  /* Rótulo editorial: caixa alta, pequeno, espaçado. */
+  .eyebrow {
+    @apply text-2xs font-medium uppercase text-ink-3;
+    letter-spacing: 0.08em;
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-ink-3
+      transition-colors hover:border-ink-3/60 focus:border-accent focus:outline-none;
+  }
+  .field[aria-invalid='true'] {
+    @apply border-risk;
+  }
+  .link {
+    @apply text-accent underline-offset-4 hover:underline;
+  }
+  .skeleton {
+    @apply rounded bg-surface-3;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Impressão / PDF dos relatórios: fundo branco, sem navegação. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-area,
+  .print-area * {
+    color: #111 !important;
+    background: transparent !important;
+    border-color: #ccc !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
+.print-only {
+  display: none;
+}
