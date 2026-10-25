@@ -1,4 +1,4 @@
-import { buildLocalCashAnalysis, reviewAnalysis, type AnalysisResult } from './analysis'
+import { buildLocalAnalysis, buildLocalCashAnalysis, reviewAnalysis, type AnalysisResult } from './analysis'
 import { BASE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
 import { acc, tx } from '@/domain/finance/testkit'
 
@@ -49,5 +49,19 @@ describe('revisor de análises', () => {
       suggestedActions: [],
     }
     expect(reviewAnalysis(empty, {}).valid).toBe(false)
+  })
+})
+
+describe('análise local de cenários sem cenários salvos', () => {
+  it('usa a data de referência como período e não cita variações ou saldos fictícios', () => {
+    const result = buildLocalAnalysis('scenarios', { asOf })
+    expect(result.review).toEqual({ valid: true, issues: [] })
+    expect(result.analysis.period).toEqual({ start: asOf, end: asOf })
+    expect(result.analysis.summary).toMatch(/Nenhum cenário salvo/)
+    expect(result.analysis.evidence.some((e) => /R\$/.test(e.claim))).toBe(false)
+    expect(result.analysis.limitations.join(' ')).toMatch(/não há cenários salvos/i)
+    expect(result.facts.bestEndDelta).toBeUndefined()
+    expect(result.facts.worstEndDelta).toBeUndefined()
+    expect(result.facts.lowestMinBalance).toBeUndefined()
   })
 })

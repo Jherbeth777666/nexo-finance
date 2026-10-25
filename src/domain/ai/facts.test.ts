@@ -34,6 +34,8 @@ describe('fatos de caixa', () => {
     expect(facts.out.value).toBe(25_000)
     expect(facts.min.value).toBe(5_000)
     expect(facts.minDate.value).toBe('20/03/2026')
+    expect(facts.periodStart.value).toBe('2026-03-15')
+    expect(facts.periodEnd.value).toBe('2026-04-13')
   })
 })
 
@@ -52,6 +54,8 @@ describe('fatos de despesas', () => {
     expect(facts.cat1.value).toBe(80_000)
     expect(facts.categoryCount.value).toBe('2')
     expect(Object.keys(facts)).not.toContain('cat2')
+    expect(facts.periodStart.value).toBe('2026-01-01')
+    expect(facts.periodEnd.value).toBe('2026-03-31')
   })
 
   it('sanitiza rótulos e limita o tamanho', () => {
@@ -70,21 +74,43 @@ describe('fatos de cenários', () => {
       { horizonDays: 30, asOf: '2026-03-15', resultSummary: { currentMin: 1_000, alternativeMin: 500, endDelta: -2_000, firstNegative: null } },
       { horizonDays: 60, asOf: '2026-03-15', resultSummary: { currentMin: 1_000, alternativeMin: -3_000, endDelta: 4_000, firstNegative: '2026-04-01' } },
     ]
-    const facts = buildScenarioFacts(scenarios)
+    const facts = buildScenarioFacts(scenarios, '2026-03-15')
     expect(facts.scenarioCount.value).toBe('2')
     expect(facts.bestEndDelta.value).toBe(4_000)
     expect(facts.worstEndDelta.value).toBe(-2_000)
     expect(facts.lowestMinBalance.value).toBe(-3_000)
     expect(facts.negativeCount.value).toBe('1')
     expect(facts.maxHorizonDays.value).toBe('60')
+    expect(facts.periodStart.value).toBe('2026-03-15')
+    expect(facts.periodEnd.value).toBe('2026-05-13')
     expect(JSON.stringify(facts)).not.toMatch(/cenário secreto/i)
   })
 
-  it('lida com ausência de cenários', () => {
-    const facts = buildScenarioFacts([])
+  it('não zera o melhor e o pior quando todas as variações têm o mesmo sinal', () => {
+    const scenarios: ScenarioFactSummary[] = [
+      { horizonDays: 30, asOf: '2026-03-15', resultSummary: { currentMin: 1_000, alternativeMin: 2_500, endDelta: 1_000, firstNegative: null } },
+      { horizonDays: 30, asOf: '2026-03-15', resultSummary: { currentMin: 1_000, alternativeMin: 3_000, endDelta: 2_000, firstNegative: null } },
+      { horizonDays: 60, asOf: '2026-03-15', resultSummary: { currentMin: 1_000, alternativeMin: -5_000, endDelta: -3_000, firstNegative: '2026-04-10' } },
+    ]
+    const positive = buildScenarioFacts(scenarios.slice(0, 2), '2026-03-15')
+    expect(positive.bestEndDelta.value).toBe(2_000)
+    expect(positive.worstEndDelta.value).toBe(1_000)
+    expect(positive.lowestMinBalance.value).toBe(2_500)
+
+    const negative = buildScenarioFacts(scenarios.slice(2), '2026-03-15')
+    expect(negative.bestEndDelta.value).toBe(-3_000)
+    expect(negative.worstEndDelta.value).toBe(-3_000)
+  })
+
+  it('lida com ausência de cenários usando a data de referência e sem valores fictícios', () => {
+    const facts = buildScenarioFacts([], '2026-03-15')
     expect(facts.scenarioCount.value).toBe('0')
-    expect(facts.bestEndDelta.value).toBe(0)
-    expect(facts.worstEndDelta.value).toBe(0)
+    expect(facts.periodStart.value).toBe('2026-03-15')
+    expect(facts.periodEnd.value).toBe('2026-03-15')
+    expect(facts.bestEndDelta).toBeUndefined()
+    expect(facts.worstEndDelta).toBeUndefined()
+    expect(facts.lowestMinBalance).toBeUndefined()
+    expect(facts.referenceDate.value).toBe('15/03/2026')
   })
 })
 

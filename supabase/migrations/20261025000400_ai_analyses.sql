@@ -41,8 +41,8 @@ revoke all on function public.rate_limit_ai() from public, anon;
 grant execute on function public.rate_limit_ai() to authenticated;
 
 -- ─── Cota mensal do plano (reserva atômica) ───
--- Conta TODAS as chamadas ao provedor no mês corrente da empresa: pendentes, ok, reprovadas pelo
--- revisor e erros. Acertos de cache não chegam aqui (a Edge Function consulta o cache antes).
+-- Conta TODAS as chamadas ao provedor no mês corrente da empresa: pendentes recentes, ok,
+-- reprovadas pelo revisor e erros. Acertos de cache não chegam aqui (a Edge Function consulta o cache antes).
 -- A checagem e a reserva acontecem na MESMA transação, com a empresa travada: duas análises
 -- disparadas juntas não furam a cota (um FOR UPDATE seguido de insert em outra chamada furaria).
 -- A Edge Function depois só atualiza a linha reservada (service_role).
@@ -65,9 +65,13 @@ begin
   if p_input_hash is null or p_input_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'Identificador de entrada inválido' using errcode = '22023';
   end if;
-  if not public.is_member(p_company) then
+  -- Gerar análise custa: só quem escreve (owner/admin/member). Viewer não reserva cota.
+  if not public.can_write(p_company) then
     raise exception 'Sem permissão para esta empresa' using errcode = '42501';
   end if;
+  -- Limite próprio da reserva: mesmo chamando a RPC direto pela API, um usuário não esgota a cota
+  -- da empresa de uma vez (no máximo 10 reservas a cada 10 minutos).
+  perform public.consume_rate_limit('ai_reserve', 10, 600);
 
   select c.timezone, pl.ai_monthly_analyses into v_tz, v_limit
   from public.companies c
@@ -89,7 +93,9 @@ begin
   from public.ai_analyses a
   where a.company_id = p_company
     and a.created_at >= v_start
-    and a.created_at < v_end;
+    and a.created_at < v_end
+    -- Reserva pendente há mais de 15 min foi abandonada (a função tem timeout de 15 s): não conta.
+    and (a.status <> 'pending' or a.created_at > now() - interval '15 minutes');
 
   if v_used >= v_limit then
     raise exception 'Cota mensal de análises de IA esgotada' using errcode = '54000';

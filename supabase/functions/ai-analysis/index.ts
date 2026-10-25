@@ -307,6 +307,7 @@ async function loadFacts(sb: SupabaseClient, agent: AgentKind, companyId: string
         },
       }
     }),
+    asOf,
   )
 }
 

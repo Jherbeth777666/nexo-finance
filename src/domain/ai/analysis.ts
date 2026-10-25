@@ -1,7 +1,7 @@
 import type { FinancialAlert } from '@/domain/types'
 import type { Projection } from '@/domain/finance/projection'
 import { formatBRL, type Cents } from '@/lib/money'
-import { addDays, formatDateBR } from '@/lib/dates'
+import { addDays, formatDateBR, type ISODate } from '@/lib/dates'
 import { buildExpenseFacts, buildScenarioFacts, sanitizeLabel, type CategoryTotal, type ScenarioFactSummary } from './facts'
 
 /**
@@ -69,6 +69,8 @@ const normalizeMoney = (s: string) => s.replace(/\s/g, '')
  */
 export function buildLocalCashAnalysis(p: Projection, alerts: FinancialAlert[]): { analysis: AnalysisResult; facts: Facts } {
   const facts: Facts = {
+    periodStart: { label: 'Início do horizonte projetado', value: p.asOf },
+    periodEnd: { label: 'Fim do horizonte projetado', value: p.endDate },
     start: { label: 'Saldo registrado', value: p.startBalance },
     in: { label: 'Entradas previstas', value: p.totalIn },
     out: { label: 'Saídas previstas', value: p.totalOut },
@@ -151,7 +153,9 @@ export function buildLocalAnalysis(agent: AgentKind, input: LocalAnalysisInput):
     if (!asOf) throw new Error('A análise de despesas exige a data de referência.')
     return buildLocalExpenseAnalysis(input.categoryTotals ?? [], asOf, input.categoryDays ?? 90)
   }
-  return buildLocalScenarioAnalysis(input.scenarios ?? [])
+  const asOf = input.projection?.asOf ?? input.asOf
+  if (!asOf) throw new Error('A análise de cenários exige a data de referência.')
+  return buildLocalScenarioAnalysis(input.scenarios ?? [], asOf)
 }
 
 function buildLocalExpenseAnalysis(categories: CategoryTotal[], asOf: string, days: number): LocalAnalysisResult {
@@ -185,31 +189,34 @@ function buildLocalExpenseAnalysis(categories: CategoryTotal[], asOf: string, da
   return { facts, analysis, review: reviewAnalysis(analysis, facts) }
 }
 
-function buildLocalScenarioAnalysis(scenarios: ScenarioFactSummary[]): LocalAnalysisResult {
-  const facts = buildScenarioFacts(scenarios)
-  const count = scenarios.length
-  const best = facts.bestEndDelta.value as Cents
-  const worst = facts.worstEndDelta.value as Cents
-  const lowest = facts.lowestMinBalance.value as Cents
-  const negatives = Number(facts.negativeCount.value)
+function buildLocalScenarioAnalysis(scenarios: ScenarioFactSummary[], asOf: ISODate): LocalAnalysisResult {
+  const facts = buildScenarioFacts(scenarios, asOf)
+  const count = Number(facts.scenarioCount.value)
   const summary =
     count === 0
       ? 'Nenhum cenário salvo ainda. Salve uma simulação para comparar alternativas com a projeção atual.'
-      : `Foram considerados ${count} cenário(s) salvo(s). A melhor variação de saldo final é ${formatBRL(best)} e a pior é ${formatBRL(worst)}; o menor saldo entre os cenários é ${formatBRL(lowest)}, com ${negatives} cenário(s) negativo(s).`
+      : `Foram considerados ${count} cenário(s) salvo(s). A melhor variação de saldo final é ${formatBRL(facts.bestEndDelta.value as Cents)} e a pior é ${formatBRL(facts.worstEndDelta.value as Cents)}; o menor saldo entre os cenários é ${formatBRL(facts.lowestMinBalance.value as Cents)}, com ${Number(facts.negativeCount.value)} cenário(s) negativo(s).`
+
+  const evidence: AnalysisResult['evidence'] = [{ claim: `Cenários salvos considerados: ${count}`, factKey: 'scenarioCount' }]
+  if (count > 0) {
+    evidence.push(
+      { claim: `Melhor variação de saldo final: ${formatBRL(facts.bestEndDelta.value as Cents)}`, factKey: 'bestEndDelta' },
+      { claim: `Pior variação de saldo final: ${formatBRL(facts.worstEndDelta.value as Cents)}`, factKey: 'worstEndDelta' },
+      { claim: `Menor saldo entre os cenários: ${formatBRL(facts.lowestMinBalance.value as Cents)}`, factKey: 'lowestMinBalance' },
+    )
+  }
+
+  const limitations = ['Cenários antigos podem não refletir os lançamentos atuais.', 'A comparação é uma estimativa e não uma garantia de resultado.']
+  if (count === 0) limitations.unshift('Não há cenários salvos; nada foi comparado com a projeção-base.')
 
   const analysis: AnalysisResult = {
     agent: 'scenarios',
     generatedBy: 'local-rules',
     summary,
-    period: { start: scenarios[0]?.asOf ?? '', end: scenarios[0]?.asOf ?? '' },
-    evidence: [
-      { claim: `Cenários salvos considerados: ${count}`, factKey: 'scenarioCount' },
-      { claim: `Melhor variação de saldo final: ${formatBRL(best)}`, factKey: 'bestEndDelta' },
-      { claim: `Pior variação de saldo final: ${formatBRL(worst)}`, factKey: 'worstEndDelta' },
-      { claim: `Menor saldo entre os cenários: ${formatBRL(lowest)}`, factKey: 'lowestMinBalance' },
-    ],
+    period: { start: String(facts.periodStart.value), end: String(facts.periodEnd.value) },
+    evidence,
     assumptions: ['Usa o resultado registrado no momento em que cada cenário foi salvo.'],
-    limitations: ['Cenários antigos podem não refletir os lançamentos atuais.', 'A comparação é uma estimativa e não uma garantia de resultado.'],
+    limitations,
     suggestedActions: count
       ? ['Revisar o cenário com menor saldo projetado e confirmar as premissas usadas.']
       : ['Salvar um cenário no simulador para comparar com a projeção-base.'],

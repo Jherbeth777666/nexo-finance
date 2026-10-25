@@ -20,6 +20,8 @@ const quotaPlan = `test_ai_${run}`
 let admin: SupabaseClient
 let owner: SupabaseClient
 let outsider: SupabaseClient
+let viewer: SupabaseClient
+let viewerId = ''
 let userId = ''
 let outsiderId = ''
 let company = ''
@@ -64,6 +66,12 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
     const other = await outsider.rpc('create_company', { p_name: `IA outra ${run}` })
     if (other.error) throw other.error
     otherCompany = other.data as string
+
+    const v = await makeUser('viewer')
+    viewerId = v.id
+    viewer = v.sb
+    const asViewer = await admin.from('company_members').insert({ company_id: company, user_id: v.id, role: 'viewer' })
+    if (asViewer.error) throw asViewer.error
 
     const accountRow = await owner.from('accounts').select('id').eq('company_id', company).limit(1).single()
     if (accountRow.error) throw accountRow.error
@@ -131,6 +139,11 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
     expect(row.data?.status).toBe('pending')
 
     expect((await owner.rpc('ai_quota_reserve', args)).error?.code).toBe('54000')
+  })
+
+  it('viewer não reserva cota (gerar análise custa)', async () => {
+    const r = await viewer.rpc('ai_quota_reserve', { p_company: company, p_agent: 'cash', p_input_hash: 'f'.repeat(64) })
+    expect(r.error?.code).toBe('42501')
   })
 
   it('não membro não reserva cota de outra empresa', async () => {
@@ -237,6 +250,7 @@ afterAll(async () => {
   await admin.from('plan_limits').delete().eq('plan', quotaPlan)
   if (userId) await admin.auth.admin.deleteUser(userId)
   if (outsiderId) await admin.auth.admin.deleteUser(outsiderId)
+  if (viewerId) await admin.auth.admin.deleteUser(viewerId)
 })
 
 describe.runIf(!configured)('configuração', () => {

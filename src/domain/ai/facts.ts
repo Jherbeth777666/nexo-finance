@@ -41,6 +41,8 @@ export interface CashFactsInput {
 
 export function buildCashFacts(input: CashFactsInput): Facts {
   const facts: Facts = {
+    periodStart: { label: 'Início do horizonte projetado', value: input.asOf },
+    periodEnd: { label: 'Fim do horizonte projetado', value: addDays(input.asOf, input.horizonDays - 1) },
     start: { label: 'Saldo registrado na data de referência', value: input.startBalance },
     in: { label: 'Entradas previstas no horizonte', value: input.totalIn },
     out: { label: 'Saídas previstas no horizonte', value: input.totalOut },
@@ -73,8 +75,8 @@ export function buildExpenseFacts(categories: CategoryTotal[], asOf: ISODate, da
   const top = all.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 5)
 
   const facts: Facts = {
-    periodStart: { label: 'Início do período analisado', value: formatDateBR(periodStart) },
-    periodEnd: { label: 'Fim do período analisado', value: formatDateBR(asOf) },
+    periodStart: { label: 'Início do período analisado', value: periodStart },
+    periodEnd: { label: 'Fim do período analisado', value: asOf },
     expenseTotal: { label: 'Total de despesas no período', value: total },
     categoryCount: { label: 'Categorias de despesa com movimento no período', value: String(all.length) },
   }
@@ -91,22 +93,26 @@ export interface ScenarioFactSummary {
   resultSummary: { currentMin: Cents; alternativeMin: Cents; endDelta: Cents; firstNegative: string | null }
 }
 
-export function buildScenarioFacts(scenarios: ScenarioFactSummary[]): Facts {
+export function buildScenarioFacts(scenarios: ScenarioFactSummary[], asOf: ISODate): Facts {
   const clean = scenarios.slice(0, 20).filter((s) => Number.isFinite(s.resultSummary.alternativeMin) && Number.isFinite(s.resultSummary.endDelta))
   const deltas = clean.map((s) => Math.round(s.resultSummary.endDelta))
   const mins = clean.map((s) => Math.round(s.resultSummary.alternativeMin))
-  const best = deltas.length ? Math.max(0, ...deltas) : 0
-  const worst = deltas.length ? Math.min(0, ...deltas) : 0
-  const lowest = mins.length ? Math.min(...mins) : 0
-  return {
+  const endOf = (s: ScenarioFactSummary) => addDays(s.asOf, Math.max(0, s.horizonDays - 1))
+  const periodStart = clean.length ? clean.reduce((min, s) => (s.asOf < min ? s.asOf : min), clean[0].asOf) : asOf
+  const periodEnd = clean.length ? clean.reduce((max, s) => (endOf(s) > max ? endOf(s) : max), endOf(clean[0])) : asOf
+  const facts: Facts = {
     scenarioCount: { label: 'Cenários salvos considerados', value: String(clean.length) },
-    bestEndDelta: { label: 'Melhor variação de saldo final entre os cenários', value: best },
-    worstEndDelta: { label: 'Pior variação de saldo final entre os cenários', value: worst },
-    lowestMinBalance: { label: 'Menor saldo projetado entre os cenários', value: lowest },
-    negativeCount: { label: 'Cenários que ficam com saldo negativo', value: String(clean.filter((s) => s.resultSummary.firstNegative).length) },
-    maxHorizonDays: { label: 'Maior horizonte simulado (dias)', value: String(clean.reduce((max, s) => Math.max(max, s.horizonDays), 0)) },
-    referenceDate: { label: 'Data de referência dos cenários', value: clean[0]?.asOf ? formatDateBR(clean[0].asOf) : '—' },
+    periodStart: { label: 'Início do período analisado', value: periodStart },
+    periodEnd: { label: 'Fim do período analisado', value: periodEnd },
+    referenceDate: { label: 'Data de referência dos cenários', value: formatDateBR(clean[0]?.asOf ?? asOf) },
   }
+  if (!deltas.length) return facts
+  facts.bestEndDelta = { label: 'Melhor variação de saldo final entre os cenários', value: Math.max(...deltas) }
+  facts.worstEndDelta = { label: 'Pior variação de saldo final entre os cenários', value: Math.min(...deltas) }
+  facts.lowestMinBalance = { label: 'Menor saldo projetado entre os cenários', value: Math.min(...mins) }
+  facts.negativeCount = { label: 'Cenários que ficam com saldo negativo', value: String(clean.filter((s) => s.resultSummary.firstNegative).length) }
+  facts.maxHorizonDays = { label: 'Maior horizonte simulado (dias)', value: String(clean.reduce((max, s) => Math.max(max, s.horizonDays), 0)) }
+  return facts
 }
 
 export interface AiFactsInput {
@@ -123,7 +129,7 @@ export function buildFactsForAgent(agent: AgentKind, input: AiFactsInput): Facts
     return buildCashFacts(input.cash)
   }
   if (agent === 'expenses') return buildExpenseFacts(input.categoryTotals ?? [], input.asOf, input.categoryDays ?? 90)
-  return buildScenarioFacts(input.scenarios ?? [])
+  return buildScenarioFacts(input.scenarios ?? [], input.asOf)
 }
 
 /** Objeto com chaves em ordem canônica: o hash não pode depender da ordem de montagem. */
