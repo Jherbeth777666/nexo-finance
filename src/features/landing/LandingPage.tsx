@@ -50,9 +50,12 @@ export default function LandingPage() {
         <section className="mx-auto grid max-w-6xl gap-12 px-4 pt-14 pb-20 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:pt-24">
           <div>
             <p className="eyebrow mb-4">Inteligência financeira para pequenas empresas</p>
-            <h1 className="text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.4rem]">Veja o que vem antes do problema.</h1>
+            <h1 className="text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.4rem]">
+              Veja o que vem antes do problema.
+            </h1>
             <p className="mt-6 max-w-lg text-base leading-relaxed text-ink-2 sm:text-lg">
-              O Nexo lê seus lançamentos e planilhas, projeta o caixa das próximas semanas e mostra o que merece atenção — com os números e as premissas de cada conclusão.
+              O Nexo lê seus lançamentos e planilhas, projeta o caixa das próximas semanas e mostra o que merece atenção — com os números e as premissas de cada
+              conclusão.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <ButtonLink to="/app/overview?modo=demo" variant="primary">
@@ -87,7 +90,11 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="px-3 pt-3">
-              <ProjectionChart points={preview.p.days.map((d) => ({ date: d.date, balance: d.balance, inflow: d.inflow, outflow: d.outflow }))} height={170} highlightDate={preview.p.minDate} />
+              <ProjectionChart
+                points={preview.p.days.map((d) => ({ date: d.date, balance: d.balance, inflow: d.inflow, outflow: d.outflow }))}
+                height={170}
+                highlightDate={preview.p.minDate}
+              />
             </div>
             <ul className="divide-y divide-line-soft border-t border-line-soft">
               {preview.alerts.map((a) => (
@@ -97,16 +104,27 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
-            <figcaption className="border-t border-line-soft px-4 py-2 text-2xs text-ink-3">Calculado agora pelo mesmo motor da aplicação, sobre a empresa fictícia da demonstração.</figcaption>
+            <figcaption className="border-t border-line-soft px-4 py-2 text-2xs text-ink-3">
+              Calculado agora pelo mesmo motor da aplicação, sobre a empresa fictícia da demonstração.
+            </figcaption>
           </figure>
         </section>
 
         <section className="border-y border-line-soft bg-surface/50">
           <div className="mx-auto grid max-w-6xl gap-px bg-line-soft sm:grid-cols-3">
             {[
-              ['O que está acontecendo com o dinheiro?', 'Saldo registrado, contas a pagar e a receber e vencidos em uma leitura só — cada número abre os lançamentos que o compõem.'],
-              ['O que pode acontecer nas próximas semanas?', 'Projeção de 7, 30 e 90 dias com cenários base, conservador e personalizado. Premissas sempre visíveis.'],
-              ['O que merece atenção — e o que fazer?', 'Alertas priorizados com evidências numéricas, período analisado, impacto estimado e próxima ação sugerida.'],
+              [
+                'O que está acontecendo com o dinheiro?',
+                'Saldo registrado, contas a pagar e a receber e vencidos em uma leitura só — cada número abre os lançamentos que o compõem.',
+              ],
+              [
+                'O que pode acontecer nas próximas semanas?',
+                'Projeção de 7, 30 e 90 dias com cenários base, conservador e personalizado. Premissas sempre visíveis.',
+              ],
+              [
+                'O que merece atenção — e o que fazer?',
+                'Alertas priorizados com evidências numéricas, período analisado, impacto estimado e próxima ação sugerida.',
+              ],
             ].map(([q, a]) => (
               <div key={q} className="bg-bg px-6 py-10">
                 <p className="text-lg leading-snug font-semibold tracking-tight">{q}</p>
@@ -141,8 +159,8 @@ export default function LandingPage() {
               <p className="eyebrow mb-3">Princípios</p>
               <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Conclusões que você consegue conferir.</h2>
               <p className="mt-4 text-sm leading-relaxed text-ink-2">
-                Cálculos financeiros são determinísticos e testados. A IA, quando disponível, é opcional, roda sob demanda e só pode citar números que o sistema calculou — um revisor automático
-                reprova análises que não batem com os dados.
+                Cálculos financeiros são determinísticos e testados. A IA, quando disponível, é opcional, roda sob demanda e só pode citar números que o sistema
+                calculou — um revisor automático reprova análises que não batem com os dados.
               </p>
             </div>
             <ul className="grid gap-px overflow-hidden rounded-lg border border-line-soft bg-line-soft sm:grid-cols-2">
@@ -175,19 +193,22 @@ export default function LandingPage() {
                 Análises de IA recebem dados agregados, não sua base inteira. Seus dados não são usados para treinar modelos.
               </p>
               <p>
-                <strong className="block text-ink">Demonstração local</strong>
-                A demonstração roda no seu navegador com dados fictícios. Planilhas importadas nela não saem do seu computador.
+                <strong className="block text-ink">Demonstração local</strong>A demonstração roda no seu navegador com dados fictícios. Planilhas importadas
+                nela não saem do seu computador.
               </p>
             </div>
             <p className="mt-8 text-xs text-ink-3">
-              Estado atual: produto em desenvolvimento. Contas de usuário, banco de dados e análises por IA ainda não estão disponíveis; a demonstração está completa.
+              Estado atual: produto em desenvolvimento. Contas de usuário, banco de dados e análises por IA ainda não estão disponíveis; a demonstração está
+              completa.
             </p>
           </div>
         </section>
 
         <section className="mx-auto max-w-6xl px-4 py-20 text-center sm:px-6">
           <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Experimente com uma empresa fictícia.</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-ink-2">Edite lançamentos, importe uma planilha, abra alertas e simule decisões. Você pode reinicializar os dados quando quiser.</p>
+          <p className="mx-auto mt-3 max-w-md text-sm text-ink-2">
+            Edite lançamentos, importe uma planilha, abra alertas e simule decisões. Você pode reinicializar os dados quando quiser.
+          </p>
           <ButtonLink to="/app/overview?modo=demo" variant="primary" className="mt-6">
             Abrir demonstração
           </ButtonLink>

@@ -6,14 +6,7 @@ import { validateCompanyName, validateInviteEmail, validateInviteRole, validateO
 import type { ValidTransaction } from '@/domain/transactions'
 import { todayIn } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
-import {
-  RepositoryError,
-  type CompanySnapshot,
-  type CreateInviteInput,
-  type FinanceRepository,
-  type ImportRecord,
-  type SavedScenario,
-} from './repository'
+import { RepositoryError, type CompanySnapshot, type CreateInviteInput, type FinanceRepository, type ImportRecord, type SavedScenario } from './repository'
 import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
 
 /**
@@ -65,7 +58,12 @@ export class SupabaseRepository implements FinanceRepository {
 
   private async fetchAudit(): Promise<AuditEntry[]> {
     const rows = check(
-      await this.sb.from('audit_logs').select('id,at,actor,action,entity,entity_id,summary').eq('company_id', this.companyId).order('at', { ascending: false }).limit(200),
+      await this.sb
+        .from('audit_logs')
+        .select('id,at,actor,action,entity,entity_id,summary')
+        .eq('company_id', this.companyId)
+        .order('at', { ascending: false })
+        .limit(200),
     ) as { id: number; at: string; actor: string | null; action: AuditEntry['action']; entity: string; entity_id: string; summary: string }[]
     const missing = [...new Set(rows.map((r) => r.actor).filter((a): a is string => !!a && !this.actorNames.has(a)))]
     if (missing.length) {
@@ -92,8 +90,18 @@ export class SupabaseRepository implements FinanceRepository {
       this.fetchTransactions(),
       this.sb.from('alert_states').select('fingerprint,state,note,updated_at').eq('company_id', c),
       this.sb.from('company_settings').select('alert_config,custom_scenario').eq('company_id', c).maybeSingle(),
-      this.sb.from('imports').select('id,file_name,file_hash,actor,total_rows,imported,skipped,errors,warnings,created_at').eq('company_id', c).order('created_at', { ascending: false }).limit(100),
-      this.sb.from('scenarios').select('id,name,horizon_days,decisions,as_of,result_summary,created_at').eq('company_id', c).order('created_at', { ascending: false }).limit(50),
+      this.sb
+        .from('imports')
+        .select('id,file_name,file_hash,actor,total_rows,imported,skipped,errors,warnings,created_at')
+        .eq('company_id', c)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      this.sb
+        .from('scenarios')
+        .select('id,name,horizon_days,decisions,as_of,result_summary,created_at')
+        .eq('company_id', c)
+        .order('created_at', { ascending: false })
+        .limit(50),
       this.fetchAudit(),
     ])
     const co = check(company) as { id: string; name: string; timezone: string; currency: 'BRL' }
@@ -115,7 +123,20 @@ export class SupabaseRepository implements FinanceRepository {
         ]),
       ),
       audit,
-      imports: (check(imports) as { id: string; file_name: string; file_hash: string; actor: string | null; total_rows: number; imported: number; skipped: number; errors: number; warnings: number; created_at: string }[]).map((i) => ({
+      imports: (
+        check(imports) as {
+          id: string
+          file_name: string
+          file_hash: string
+          actor: string | null
+          total_rows: number
+          imported: number
+          skipped: number
+          errors: number
+          warnings: number
+          created_at: string
+        }[]
+      ).map((i) => ({
         id: i.id,
         fileName: i.file_name,
         fileHash: i.file_hash,
@@ -127,7 +148,17 @@ export class SupabaseRepository implements FinanceRepository {
         errors: i.errors,
         warnings: i.warnings,
       })),
-      scenarios: (check(scenarios) as { id: string; name: string; horizon_days: number; decisions: SavedScenario['decisions']; as_of: string; result_summary: SavedScenario['resultSummary']; created_at: string }[]).map((s) => ({
+      scenarios: (
+        check(scenarios) as {
+          id: string
+          name: string
+          horizon_days: number
+          decisions: SavedScenario['decisions']
+          as_of: string
+          result_summary: SavedScenario['resultSummary']
+          created_at: string
+        }[]
+      ).map((s) => ({
         id: s.id,
         name: s.name,
         horizonDays: s.horizon_days,
@@ -153,7 +184,11 @@ export class SupabaseRepository implements FinanceRepository {
 
   async createTransaction(input: ValidTransaction): Promise<Transaction> {
     const row = check(
-      await this.sb.from('transactions').insert({ ...transactionToRow(input), company_id: this.companyId }).select(TX_COLUMNS).single(),
+      await this.sb
+        .from('transactions')
+        .insert({ ...transactionToRow(input), company_id: this.companyId })
+        .select(TX_COLUMNS)
+        .single(),
     ) as unknown as TxRow
     const tx = rowToTransaction(row)
     const s = await this.state()
@@ -249,7 +284,11 @@ export class SupabaseRepository implements FinanceRepository {
 
   async addCategory(c: Omit<Category, 'id'>): Promise<Category> {
     const row = check(
-      await this.sb.from('categories').insert({ company_id: this.companyId, name: c.name, kind: c.kind, fixed: !!c.fixed }).select('id,name,kind,fixed').single(),
+      await this.sb
+        .from('categories')
+        .insert({ company_id: this.companyId, name: c.name, kind: c.kind, fixed: !!c.fixed })
+        .select('id,name,kind,fixed')
+        .single(),
     ) as Category
     const s = await this.state()
     s.categories = [...s.categories, row]
@@ -261,9 +300,12 @@ export class SupabaseRepository implements FinanceRepository {
     const valid = validateCompanyName(name)
     if (!valid.ok) throw new RepositoryError(valid.error)
     // Nunca envie company_id no payload: a empresa é identificada apenas pelo filtro e pelo RLS.
-    const rows = check(
-      await this.sb.from('companies').update({ name: valid.value }).eq('id', this.companyId).select('id,name,timezone,currency'),
-    ) as { id: string; name: string; timezone: string; currency: 'BRL' }[]
+    const rows = check(await this.sb.from('companies').update({ name: valid.value }).eq('id', this.companyId).select('id,name,timezone,currency')) as {
+      id: string
+      name: string
+      timezone: string
+      currency: 'BRL'
+    }[]
     // RLS bloqueia UPDATE silenciosamente (0 linhas) em vez de gerar erro.
     if (!rows.length) throw new RepositoryError('Empresa não encontrada ou sem permissão para editar.')
     const row = rows[0]
@@ -303,7 +345,14 @@ export class SupabaseRepository implements FinanceRepository {
     const row = check(
       await this.sb
         .from('scenarios')
-        .insert({ company_id: this.companyId, name: sc.name, horizon_days: sc.horizonDays, decisions: sc.decisions, as_of: sc.asOf, result_summary: sc.resultSummary })
+        .insert({
+          company_id: this.companyId,
+          name: sc.name,
+          horizon_days: sc.horizonDays,
+          decisions: sc.decisions,
+          as_of: sc.asOf,
+          result_summary: sc.resultSummary,
+        })
         .select('id,created_at')
         .single(),
     ) as { id: string; created_at: string }
@@ -321,9 +370,11 @@ export class SupabaseRepository implements FinanceRepository {
   }
 
   async listMembers(): Promise<CompanyMember[]> {
-    const rows = check(
-      await this.sb.from('company_members').select('user_id,role,created_at').eq('company_id', this.companyId).order('created_at'),
-    ) as { user_id: string; role: MemberRole; created_at: string }[]
+    const rows = check(await this.sb.from('company_members').select('user_id,role,created_at').eq('company_id', this.companyId).order('created_at')) as {
+      user_id: string
+      role: MemberRole
+      created_at: string
+    }[]
     const ids = rows.map((r) => r.user_id)
     const names = new Map<string, string>()
     if (ids.length) {
@@ -349,9 +400,10 @@ export class SupabaseRepository implements FinanceRepository {
     if (!email.ok) throw new RepositoryError(email.error)
     const role = validateInviteRole(input.role)
     if (!role.ok) throw new RepositoryError(role.error)
-    const created = check(
-      await this.sb.rpc('create_invite', { p_company: this.companyId, p_email: email.value, p_role: role.value }),
-    ) as { id: string; token: string }
+    const created = check(await this.sb.rpc('create_invite', { p_company: this.companyId, p_email: email.value, p_role: role.value })) as {
+      id: string
+      token: string
+    }
     const now = new Date()
     return {
       id: created.id,
@@ -384,23 +436,19 @@ export class SupabaseRepository implements FinanceRepository {
     ) as { user_id: string; role: MemberRole; created_at: string }[]
     // RLS não gera erro ao bloquear: 0 linhas significa sem permissão, owner ou membro inexistente.
     if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para alterar.')
-    return (await this.listMembers()).find((m) => m.userId === userId) ?? {
-      userId: rows[0].user_id,
-      name: 'Usuário',
-      role: rows[0].role,
-      joinedAt: rows[0].created_at,
-    }
+    return (
+      (await this.listMembers()).find((m) => m.userId === userId) ?? {
+        userId: rows[0].user_id,
+        name: 'Usuário',
+        role: rows[0].role,
+        joinedAt: rows[0].created_at,
+      }
+    )
   }
 
   async removeMember(userId: string): Promise<void> {
     const rows = check(
-      await this.sb
-        .from('company_members')
-        .delete()
-        .eq('company_id', this.companyId)
-        .eq('user_id', userId)
-        .neq('role', 'owner')
-        .select('user_id'),
+      await this.sb.from('company_members').delete().eq('company_id', this.companyId).eq('user_id', userId).neq('role', 'owner').select('user_id'),
     ) as { user_id: string }[]
     if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para remover.')
   }

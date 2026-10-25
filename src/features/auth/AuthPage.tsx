@@ -53,7 +53,11 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
       return
     }
     if (disabled) {
-      setNotice({ tone: 'warn', title: 'Contas ainda não disponíveis', text: 'O serviço de autenticação não está configurado neste ambiente. Nenhum dado foi enviado.' })
+      setNotice({
+        tone: 'warn',
+        title: 'Contas ainda não disponíveis',
+        text: 'O serviço de autenticação não está configurado neste ambiente. Nenhum dado foi enviado.',
+      })
       return
     }
     setBusy(true)
@@ -128,7 +132,12 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
             <Input id="auth-email" type="email" autoComplete="email" value={form.email} invalid={!!errors.email} onChange={set('email')} />
           </Field>
           {mode !== 'forgot' && (
-            <Field label="Senha" htmlFor="auth-password" error={errors.password} hint={mode === 'signup' ? 'Ao menos 10 caracteres, com letras e números' : undefined}>
+            <Field
+              label="Senha"
+              htmlFor="auth-password"
+              error={errors.password}
+              hint={mode === 'signup' ? 'Ao menos 10 caracteres, com letras e números' : undefined}
+            >
               <Input
                 id="auth-password"
                 type="password"
@@ -171,7 +180,11 @@ export default function AuthPage({ mode: initial }: { mode: 'login' | 'signup' }
             )}
           </Notice>
         )}
-        {mode === 'signup' && <p className="mt-6 text-xs text-ink-3">Guardamos apenas nome, e-mail e os dados financeiros que você registrar. Seus dados não são usados para treinar modelos de IA.</p>}
+        {mode === 'signup' && (
+          <p className="mt-6 text-xs text-ink-3">
+            Guardamos apenas nome, e-mail e os dados financeiros que você registrar. Seus dados não são usados para treinar modelos de IA.
+          </p>
+        )}
       </div>
       <aside className="hidden flex-1 items-center border-l border-line-soft bg-surface px-16 lg:flex">
         <div className="max-w-md">

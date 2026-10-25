@@ -74,7 +74,11 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
     catExpenseA = cats.data!.find((c) => c.kind === 'expense')!.id
     catIncomeA = cats.data!.find((c) => c.kind === 'income')!.id
 
-    const ins = await A.sb.from('transactions').insert(tx(companyA, accountA, { category_id: catExpenseA })).select('id').single()
+    const ins = await A.sb
+      .from('transactions')
+      .insert(tx(companyA, accountA, { category_id: catExpenseA }))
+      .select('id')
+      .single()
     if (ins.error) throw ins.error
     txA = ins.data.id
 
@@ -151,7 +155,9 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
         p_company: companyA,
         p_file_name: 'ataque.csv',
         p_file_hash: 'a'.repeat(64),
-        p_rows: [{ kind: 'income', status: 'pending', description: 'x', account_id: accountA, amount: '1.00', competence_date: '2026-01-01', due_date: '2026-01-01' }],
+        p_rows: [
+          { kind: 'income', status: 'pending', description: 'x', account_id: accountA, amount: '1.00', competence_date: '2026-01-01', due_date: '2026-01-01' },
+        ],
         p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 },
       })
       expect(r.error?.code).toBe('42501')
@@ -165,7 +171,11 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
     })
 
     it('não altera configurações nem estado de alertas de A', async () => {
-      const s = await B.sb.from('company_settings').update({ alert_config: { safetyMargin: 0 } }).eq('company_id', companyA).select('company_id')
+      const s = await B.sb
+        .from('company_settings')
+        .update({ alert_config: { safetyMargin: 0 } })
+        .eq('company_id', companyA)
+        .select('company_id')
       expect(s.data ?? []).toEqual([])
       const a = await B.sb.from('alert_states').insert({ company_id: companyA, fingerprint: 'x', state: 'ignored' })
       expect(a.error?.code).toBe('42501')
@@ -216,7 +226,11 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
 
   describe('dados da empresa (usuário A, owner)', () => {
     it('renomeia a empresa e altera o saldo de abertura, com registro de ações', async () => {
-      const co = await A.sb.from('companies').update({ name: `Empresa A ${run}` }).eq('id', companyA).select('name')
+      const co = await A.sb
+        .from('companies')
+        .update({ name: `Empresa A ${run}` })
+        .eq('id', companyA)
+        .select('name')
       expect(co.data).toEqual([{ name: `Empresa A ${run}` }])
       const acc = await A.sb.from('accounts').update({ opening_balance: '1234.56' }).eq('id', accountA).select('opening_balance')
       expect(Number(acc.data![0].opening_balance)).toBe(1234.56)
@@ -260,8 +274,23 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
       await expectRejected({ description: 'x'.repeat(201) })
     })
     it('mesma origem de importação não entra duas vezes', async () => {
-      const row = { kind: 'income', status: 'pending', description: 'Linha', account_id: accountA, amount: '10.00', competence_date: '2026-01-01', due_date: '2026-01-05', source_ref: `row:${run}` }
-      const args = { p_company: companyA, p_file_name: 'a.csv', p_file_hash: 'b'.repeat(64), p_rows: [row], p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 } }
+      const row = {
+        kind: 'income',
+        status: 'pending',
+        description: 'Linha',
+        account_id: accountA,
+        amount: '10.00',
+        competence_date: '2026-01-01',
+        due_date: '2026-01-05',
+        source_ref: `row:${run}`,
+      }
+      const args = {
+        p_company: companyA,
+        p_file_name: 'a.csv',
+        p_file_hash: 'b'.repeat(64),
+        p_rows: [row],
+        p_stats: { total_rows: 1, skipped: 0, errors: 0, warnings: 0 },
+      }
       const first = await A.sb.rpc('import_transactions', args)
       expect(first.error).toBeNull()
       const again = await A.sb.rpc('import_transactions', args)

@@ -24,7 +24,12 @@ function fakeClient() {
     },
   }
   return {
-    client: { from(name: string) { table = name; return builder } } as unknown as SupabaseClient,
+    client: {
+      from(name: string) {
+        table = name
+        return builder
+      },
+    } as unknown as SupabaseClient,
     calls,
   }
 }

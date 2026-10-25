@@ -18,9 +18,7 @@ export default function IntelligencePage() {
   const [filter, setFilter] = useState<Filter>('open')
   const selectedFp = params.get('alerta')
 
-  const list = alerts.filter((a) =>
-    filter === 'all' ? true : filter === 'open' ? a.state === 'new' || a.state === 'in_review' : a.state === filter,
-  )
+  const list = alerts.filter((a) => (filter === 'all' ? true : filter === 'open' ? a.state === 'new' || a.state === 'in_review' : a.state === filter))
   const selected = alerts.find((a) => a.fingerprint === selectedFp) ?? list[0] ?? null
   const counts = {
     open: alerts.filter((a) => a.state === 'new' || a.state === 'in_review').length,
@@ -123,11 +121,7 @@ function AlertDetail({ alert: a }: { alert: AlertWithState }) {
     }
   }
   return (
-    <Panel
-      eyebrow="Detalhe do alerta"
-      title={a.title}
-      actions={<SeverityTag severity={a.severity} />}
-    >
+    <Panel eyebrow="Detalhe do alerta" title={a.title} actions={<SeverityTag severity={a.severity} />}>
       <p className="text-sm leading-relaxed text-ink-2">{a.description}</p>
 
       <h3 className="eyebrow mt-5 mb-2">Evidências</h3>
@@ -144,7 +138,18 @@ function AlertDetail({ alert: a }: { alert: AlertWithState }) {
         <Meta label="Período analisado" value={`${formatDateBR(a.period.start)} – ${formatDateBR(a.period.end)}`} />
         <Meta label="Detectado em" value={formatDateBR(a.detectedOn)} />
         <Meta label="Origem dos dados" value={a.source} />
-        <Meta label="Impacto estimado" value={a.impact === null ? a.impactLabel : <><Money value={a.impact} /> <span className="text-ink-3">{a.impactLabel}</span></>} />
+        <Meta
+          label="Impacto estimado"
+          value={
+            a.impact === null ? (
+              a.impactLabel
+            ) : (
+              <>
+                <Money value={a.impact} /> <span className="text-ink-3">{a.impactLabel}</span>
+              </>
+            )
+          }
+        />
       </dl>
 
       <div className="mt-5 rounded-md border border-line-soft bg-surface-2/60 px-3.5 py-3">
@@ -162,7 +167,9 @@ function AlertDetail({ alert: a }: { alert: AlertWithState }) {
           </ButtonLink>
         )}
         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
-        <span className="text-xs text-ink-3">Estado: <Tag>{STATE_LABEL[a.state]}</Tag></span>
+        <span className="text-xs text-ink-3">
+          Estado: <Tag>{STATE_LABEL[a.state]}</Tag>
+        </span>
         <div className="ml-auto flex flex-wrap gap-1">
           {a.state !== 'in_review' && a.state !== 'resolved' && (
             <Button size="sm" variant="ghost" loading={busy === 'in_review'} onClick={() => setState('in_review')}>
@@ -214,7 +221,8 @@ function AnalysisPanel() {
   return (
     <Panel eyebrow="Análises sob demanda" title="Agente de caixa">
       <Notice tone="accent" title="Análises por IA indisponíveis">
-        Nenhum provedor de IA está configurado neste ambiente. Todos os indicadores, projeções e alertas acima são calculados por regras determinísticas e não dependem de IA.
+        Nenhum provedor de IA está configurado neste ambiente. Todos os indicadores, projeções e alertas acima são calculados por regras determinísticas e não
+        dependem de IA.
       </Notice>
       {!show ? (
         <Button className="mt-4" size="sm" icon="eye" onClick={() => setShow(true)}>
@@ -248,7 +256,12 @@ function AnalysisPanel() {
                 <li key={x}>{x}</li>
               ))}
             </Section>
-            <div className={cx('mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-xs', result.review.valid ? 'border-pos/25 text-pos' : 'border-risk/30 text-risk')}>
+            <div
+              className={cx(
+                'mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
+                result.review.valid ? 'border-pos/25 text-pos' : 'border-risk/30 text-risk',
+              )}
+            >
               <Icon name={result.review.valid ? 'check' : 'alert'} size={14} className="mt-px shrink-0" />
               <span>
                 Revisor de análises:{' '}

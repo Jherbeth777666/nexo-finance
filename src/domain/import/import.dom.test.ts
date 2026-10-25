@@ -1,17 +1,7 @@
 // @vitest-environment jsdom
 import { parseCSV, detectDelimiter, toCSV } from './csv'
 import { readXlsx, XlsxError } from './xlsx'
-import {
-  ImportFileError,
-  decodeText,
-  sha256Hex,
-  suggestMapping,
-  summarize,
-  tableFromCSVBytes,
-  toTable,
-  validateFileMeta,
-  validateRows,
-} from './pipeline'
+import { ImportFileError, decodeText, sha256Hex, suggestMapping, summarize, tableFromCSVBytes, toTable, validateFileMeta, validateRows } from './pipeline'
 import { cats, tx } from '@/domain/finance/testkit'
 
 const asOf = '2026-03-15'
@@ -26,10 +16,16 @@ describe('CSV', () => {
   })
   it('respeita aspas, aspas escapadas e quebras de linha', () => {
     const rows = parseCSV('a,b\n"x, y","diz ""oi""\nlinha 2"\n', ',')
-    expect(rows).toEqual([['a', 'b'], ['x, y', 'diz "oi"\nlinha 2']])
+    expect(rows).toEqual([
+      ['a', 'b'],
+      ['x, y', 'diz "oi"\nlinha 2'],
+    ])
   })
   it('remove BOM e ignora linhas vazias', () => {
-    expect(parseCSV('﻿a;b\r\n\r\n1;2\r\n', ';')).toEqual([['a', 'b'], ['1', '2']])
+    expect(parseCSV('﻿a;b\r\n\r\n1;2\r\n', ';')).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ])
   })
   it('exportação neutraliza fórmulas', () => {
     const out = toCSV([['=HYPERLINK("x")', '+1', 'ok', 10]])

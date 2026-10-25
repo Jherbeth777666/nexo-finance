@@ -38,7 +38,16 @@ describe('revisor de análises', () => {
   })
 
   it('resposta vazia (falha do provedor) nunca é válida', () => {
-    const empty: AnalysisResult = { agent: 'cash', generatedBy: 'ai', summary: '', period: { start: asOf, end: asOf }, evidence: [], assumptions: [], limitations: [], suggestedActions: [] }
+    const empty: AnalysisResult = {
+      agent: 'cash',
+      generatedBy: 'ai',
+      summary: '',
+      period: { start: asOf, end: asOf },
+      evidence: [],
+      assumptions: [],
+      limitations: [],
+      suggestedActions: [],
+    }
     expect(reviewAnalysis(empty, {}).valid).toBe(false)
   })
 })

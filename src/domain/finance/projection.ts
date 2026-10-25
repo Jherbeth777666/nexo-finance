@@ -55,16 +55,14 @@ export function describeAssumptions(a: ScenarioAssumptions): string[] {
       ? 'Recebimentos previstos entram na data de vencimento.'
       : `Recebimentos previstos entram ${a.receivableDelayDays} dia(s) após o vencimento.`,
   )
-  if (a.receivableHaircutPct > 0)
-    lines.push(`${a.receivableHaircutPct}% do valor de cada recebimento previsto é desconsiderado por prudência.`)
+  if (a.receivableHaircutPct > 0) lines.push(`${a.receivableHaircutPct}% do valor de cada recebimento previsto é desconsiderado por prudência.`)
   lines.push(
     a.includeOverdueReceivables
       ? `Recebimentos já vencidos são considerados recebidos em ${a.overdueAssumedInDays} dia(s).`
       : 'Recebimentos já vencidos não são considerados (data de recebimento incerta).',
   )
   lines.push('Pagamentos vencidos e não quitados são tratados como pagos hoje.')
-  if (a.estimatedWeeklyIncome > 0)
-    lines.push(`Receita estimada pelo usuário de ${formatBRL(a.estimatedWeeklyIncome)} por semana, a partir de 7 dias.`)
+  if (a.estimatedWeeklyIncome > 0) lines.push(`Receita estimada pelo usuário de ${formatBRL(a.estimatedWeeklyIncome)} por semana, a partir de 7 dias.`)
   else lines.push('Só entram lançamentos registrados; vendas futuras ainda não lançadas não aparecem.')
   return lines
 }
@@ -129,8 +127,7 @@ export interface Projection {
 
 export function projectCashflow(input: ProjectionInput): Projection {
   const { accounts, transactions, asOf, horizonDays, assumptions: a } = input
-  if (!Number.isInteger(horizonDays) || horizonDays < 1 || horizonDays > 366)
-    throw new RangeError('Horizonte de projeção deve estar entre 1 e 366 dias')
+  if (!Number.isInteger(horizonDays) || horizonDays < 1 || horizonDays > 366) throw new RangeError('Horizonte de projeção deve estar entre 1 e 366 dias')
   const endDate = addDays(asOf, horizonDays - 1)
   const startBalance = registeredBalance(accounts, transactions, asOf)
 
@@ -292,7 +289,6 @@ export function compareProjections(reference: Projection, alternative: Projectio
     endBalanceDelta: alternative.endBalance - reference.endBalance,
     totalInDelta: alternative.totalIn - reference.totalIn,
     totalOutDelta: alternative.totalOut - reference.totalOut,
-    newNegativeDate:
-      alternative.firstNegativeDate && !reference.firstNegativeDate ? alternative.firstNegativeDate : null,
+    newNegativeDate: alternative.firstNegativeDate && !reference.firstNegativeDate ? alternative.firstNegativeDate : null,
   }
 }

@@ -56,8 +56,7 @@ export function reviewAnalysis(a: AnalysisResult, facts: Facts): Review {
     }
   }
   if (!a.limitations.length) issues.push('Limitações não declaradas')
-  if (/\b(certamente|garantid[oa]|com certeza|sem dúvida)\b/i.test(texts.join(' ')))
-    issues.push('Linguagem de certeza incompatível com uma estimativa')
+  if (/\b(certamente|garantid[oa]|com certeza|sem dúvida)\b/i.test(texts.join(' '))) issues.push('Linguagem de certeza incompatível com uma estimativa')
   return { valid: issues.length === 0, issues }
 }
 

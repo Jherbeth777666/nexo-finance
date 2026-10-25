@@ -105,7 +105,8 @@ export default function OverviewPage() {
             value={<Money value={o.projection30.endBalance} tone="risk-only" className="text-xl font-semibold" />}
             foot={
               <>
-                Mínimo <Money value={o.projection30.minBalance} tone="risk-only" /> em <span className="num">{formatDateBR(o.projection30.minDate).slice(0, 5)}</span>
+                Mínimo <Money value={o.projection30.minBalance} tone="risk-only" /> em{' '}
+                <span className="num">{formatDateBR(o.projection30.minDate).slice(0, 5)}</span>
               </>
             }
           />

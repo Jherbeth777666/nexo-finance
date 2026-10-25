@@ -59,8 +59,21 @@ export function Onboarding() {
           <Field label="Nome da empresa" htmlFor="ob-name" error={errors.name}>
             <Input id="ob-name" value={name} maxLength={120} invalid={!!errors.name} onChange={(e) => setName(e.target.value)} autoFocus />
           </Field>
-          <Field label="Saldo atual da conta principal (R$)" htmlFor="ob-balance" error={errors.balance} hint="Ponto de partida rastreável do saldo e das projeções. Pode ser zero.">
-            <Input id="ob-balance" inputMode="decimal" className="num" placeholder="0,00" value={balance} invalid={!!errors.balance} onChange={(e) => setBalance(e.target.value)} />
+          <Field
+            label="Saldo atual da conta principal (R$)"
+            htmlFor="ob-balance"
+            error={errors.balance}
+            hint="Ponto de partida rastreável do saldo e das projeções. Pode ser zero."
+          >
+            <Input
+              id="ob-balance"
+              inputMode="decimal"
+              className="num"
+              placeholder="0,00"
+              value={balance}
+              invalid={!!errors.balance}
+              onChange={(e) => setBalance(e.target.value)}
+            />
           </Field>
           {errors.form && <Notice tone="risk">{errors.form}</Notice>}
           <Button type="submit" variant="primary" className="w-full" loading={busy}>

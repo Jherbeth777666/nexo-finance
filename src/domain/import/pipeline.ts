@@ -11,17 +11,7 @@ export const IMPORT_LIMITS = {
 }
 
 export type ImportField =
-  | 'date'
-  | 'dueDate'
-  | 'settledDate'
-  | 'description'
-  | 'amount'
-  | 'kind'
-  | 'category'
-  | 'status'
-  | 'counterparty'
-  | 'notes'
-  | 'externalId'
+  'date' | 'dueDate' | 'settledDate' | 'description' | 'amount' | 'kind' | 'category' | 'status' | 'counterparty' | 'notes' | 'externalId'
 
 export const FIELD_LABELS: Record<ImportField, string> = {
   date: 'Data (competência)',
@@ -40,7 +30,19 @@ export const FIELD_LABELS: Record<ImportField, string> = {
 const SYNONYMS: Record<ImportField, string[]> = {
   date: ['data', 'data lancamento', 'data do lancamento', 'competencia', 'data competencia', 'dt', 'date', 'emissao', 'data emissao'],
   dueDate: ['vencimento', 'data vencimento', 'data de vencimento', 'vence em', 'dt vencimento', 'due date', 'venc'],
-  settledDate: ['pagamento', 'data pagamento', 'data de pagamento', 'recebimento', 'data recebimento', 'liquidacao', 'data liquidacao', 'baixa', 'data baixa', 'pago em', 'quitacao'],
+  settledDate: [
+    'pagamento',
+    'data pagamento',
+    'data de pagamento',
+    'recebimento',
+    'data recebimento',
+    'liquidacao',
+    'data liquidacao',
+    'baixa',
+    'data baixa',
+    'pago em',
+    'quitacao',
+  ],
   description: ['descricao', 'historico', 'descricao do lancamento', 'lancamento', 'item', 'description', 'memo', 'detalhe'],
   amount: ['valor', 'valor r$', 'valor rs', 'montante', 'amount', 'total', 'valor total', 'quantia', 'vlr'],
   kind: ['tipo', 'natureza', 'entrada saida', 'e s', 'credito debito', 'operacao', 'type', 'movimento'],
@@ -72,9 +74,7 @@ export function suggestMapping(headers: string[]): ColumnMapping {
     for (const field of fields) {
       if (mapping[field] !== undefined) continue
       const idx = normalized.findIndex(
-        (h, i) =>
-          !used.has(i) &&
-          SYNONYMS[field].some((syn) => (pass === 'exact' ? h === syn : h.split(' ').length <= 4 && (` ${h} `).includes(` ${syn} `))),
+        (h, i) => !used.has(i) && SYNONYMS[field].some((syn) => (pass === 'exact' ? h === syn : h.split(' ').length <= 4 && ` ${h} `.includes(` ${syn} `))),
       )
       if (idx >= 0) {
         mapping[field] = idx
@@ -96,11 +96,9 @@ export class ImportFileError extends Error {}
 
 export function validateFileMeta(name: string, size: number) {
   const lower = name.toLowerCase()
-  if (!IMPORT_LIMITS.extensions.some((e) => lower.endsWith(e)))
-    throw new ImportFileError('Formato não suportado. Envie um arquivo .csv ou .xlsx.')
+  if (!IMPORT_LIMITS.extensions.some((e) => lower.endsWith(e))) throw new ImportFileError('Formato não suportado. Envie um arquivo .csv ou .xlsx.')
   if (size === 0) throw new ImportFileError('O arquivo está vazio.')
-  if (size > IMPORT_LIMITS.maxBytes)
-    throw new ImportFileError(`O arquivo excede o limite de ${IMPORT_LIMITS.maxBytes / 1024 / 1024} MB.`)
+  if (size > IMPORT_LIMITS.maxBytes) throw new ImportFileError(`O arquivo excede o limite de ${IMPORT_LIMITS.maxBytes / 1024 / 1024} MB.`)
 }
 
 /** Decodifica texto tentando UTF-8 estrito e caindo para Windows-1252 (comum em exportações brasileiras). */
@@ -199,7 +197,11 @@ export function validateRows(
     const date = parseDateField('date')
     const due = parseDateField('dueDate')
     const settled = parseDateField('settledDate')
-    for (const [f, v] of [['date', date], ['dueDate', due], ['settledDate', settled]] as const) {
+    for (const [f, v] of [
+      ['date', date],
+      ['dueDate', due],
+      ['settledDate', settled],
+    ] as const) {
       if (v === 'invalid') errors.push(`${FIELD_LABELS[f]} inválida: "${cellStr(get(f))}"`)
     }
     const validDate = (v: ISODate | null | 'invalid') => (v && v !== 'invalid' ? v : null)
@@ -224,8 +226,7 @@ export function validateRows(
         if (!validDate(settled)) warnings.push('Sem data de pagamento: considerado liquidado na data informada')
       }
     }
-    const settledDate =
-      status === 'settled' ? (validDate(settled) ?? validDate(due) ?? competenceDate) : null
+    const settledDate = status === 'settled' ? (validDate(settled) ?? validDate(due) ?? competenceDate) : null
     if (settledDate && settledDate > ctx.asOf) {
       errors.push('Data de liquidação no futuro: marque como pendente ou corrija a data')
     }

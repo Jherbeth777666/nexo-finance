@@ -98,11 +98,25 @@ export function TransactionDialog({ open, tx, onClose }: { open: boolean; tx: Tr
           </Field>
           <div className="sm:col-span-2">
             <Field label="Descrição" htmlFor="tx-description" error={errors.description}>
-              <Input id="tx-description" value={form.description} maxLength={200} invalid={!!errors.description} onChange={(e) => set('description', e.target.value)} autoFocus />
+              <Input
+                id="tx-description"
+                value={form.description}
+                maxLength={200}
+                invalid={!!errors.description}
+                onChange={(e) => set('description', e.target.value)}
+                autoFocus
+              />
             </Field>
           </div>
           <Field label="Valor (R$)" htmlFor="tx-amount" error={errors.amount} hint="Ex.: 1.250,50">
-            <Input id="tx-amount" inputMode="decimal" className="num" value={form.amount} invalid={!!errors.amount} onChange={(e) => set('amount', e.target.value)} />
+            <Input
+              id="tx-amount"
+              inputMode="decimal"
+              className="num"
+              value={form.amount}
+              invalid={!!errors.amount}
+              onChange={(e) => set('amount', e.target.value)}
+            />
           </Field>
           {form.kind === 'transfer' ? (
             <Field label="Conta de destino" htmlFor="tx-toAccountId" error={errors.toAccountId}>
@@ -142,14 +156,27 @@ export function TransactionDialog({ open, tx, onClose }: { open: boolean; tx: Tr
             </Field>
           )}
           <Field label="Competência" htmlFor="tx-competenceDate" error={errors.competenceDate} hint="Período a que o fato pertence">
-            <Input id="tx-competenceDate" type="date" value={form.competenceDate} invalid={!!errors.competenceDate} onChange={(e) => set('competenceDate', e.target.value)} />
+            <Input
+              id="tx-competenceDate"
+              type="date"
+              value={form.competenceDate}
+              invalid={!!errors.competenceDate}
+              onChange={(e) => set('competenceDate', e.target.value)}
+            />
           </Field>
           <Field label="Vencimento" htmlFor="tx-dueDate" error={errors.dueDate}>
             <Input id="tx-dueDate" type="date" value={form.dueDate} invalid={!!errors.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
           </Field>
           {form.status === 'settled' && (
             <Field label={form.kind === 'income' ? 'Recebido em' : 'Pago em'} htmlFor="tx-settledDate" error={errors.settledDate}>
-              <Input id="tx-settledDate" type="date" max={today} value={form.settledDate} invalid={!!errors.settledDate} onChange={(e) => set('settledDate', e.target.value)} />
+              <Input
+                id="tx-settledDate"
+                type="date"
+                max={today}
+                value={form.settledDate}
+                invalid={!!errors.settledDate}
+                onChange={(e) => set('settledDate', e.target.value)}
+              />
             </Field>
           )}
           <div className="sm:col-span-2">

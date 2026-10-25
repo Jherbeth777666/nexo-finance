@@ -55,7 +55,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   )
 })
 
-export function ButtonLink({ variant = 'secondary', size = 'md', icon, className, children, ...rest }: LinkProps & { variant?: Variant; size?: keyof typeof sizes; icon?: IconName }) {
+export function ButtonLink({
+  variant = 'secondary',
+  size = 'md',
+  icon,
+  className,
+  children,
+  ...rest
+}: LinkProps & { variant?: Variant; size?: keyof typeof sizes; icon?: IconName }) {
   return (
     <Link
       className={cx('inline-flex items-center justify-center rounded-md whitespace-nowrap transition-colors', variants[variant], sizes[size], className)}
@@ -88,8 +95,7 @@ export function Money({
   tone?: 'none' | 'auto' | 'risk-only'
   className?: string
 }) {
-  const color =
-    tone === 'auto' ? (value > 0 ? 'text-pos' : value < 0 ? 'text-risk' : '') : tone === 'risk-only' && value < 0 ? 'text-risk' : ''
+  const color = tone === 'auto' ? (value > 0 ? 'text-pos' : value < 0 ? 'text-risk' : '') : tone === 'risk-only' && value < 0 ? 'text-risk' : ''
   return <span className={cx('num whitespace-nowrap', color, className)}>{signed ? formatSignedBRL(value) : formatBRL(value)}</span>
 }
 
@@ -219,7 +225,17 @@ export function EmptyState({ title, children, action, icon = 'info' }: { title: 
   )
 }
 
-export function Notice({ tone = 'accent', title, children, className }: { tone?: 'accent' | 'warn' | 'risk' | 'pos'; title?: string; children: ReactNode; className?: string }) {
+export function Notice({
+  tone = 'accent',
+  title,
+  children,
+  className,
+}: {
+  tone?: 'accent' | 'warn' | 'risk' | 'pos'
+  title?: string
+  children: ReactNode
+  className?: string
+}) {
   const tones = {
     accent: 'border-accent/30 bg-accent-soft',
     warn: 'border-warn/30 bg-warn-soft',
@@ -277,7 +293,13 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 
 export function Select({ invalid, className, id, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }) {
   return (
-    <select id={id} aria-invalid={invalid || undefined} aria-describedby={invalid && id ? `${id}-error` : undefined} className={cx('field pr-8', className)} {...rest}>
+    <select
+      id={id}
+      aria-invalid={invalid || undefined}
+      aria-describedby={invalid && id ? `${id}-error` : undefined}
+      className={cx('field pr-8', className)}
+      {...rest}
+    >
       {children}
     </select>
   )

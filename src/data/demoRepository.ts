@@ -17,9 +17,7 @@ const KEY = 'nexo.demo.v1'
 const ACTOR = 'Visitante (demonstração)'
 
 const uid = () =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -247,17 +245,11 @@ export class DemoRepository implements FinanceRepository {
       throw new RepositoryError('Este e-mail já faz parte da equipe.')
     }
     const now = Date.now()
-    if (
-      s.invites.some(
-        (i) => i.email === email.value && !i.acceptedAt && !i.revokedAt && new Date(i.expiresAt).getTime() > now,
-      )
-    ) {
+    if (s.invites.some((i) => i.email === email.value && !i.acceptedAt && !i.revokedAt && new Date(i.expiresAt).getTime() > now)) {
       throw new RepositoryError('Já existe um convite ativo para este e-mail.')
     }
     // Convites antigos/expirados do mesmo e-mail deixam de ser pendentes.
-    s.invites = s.invites.map((i) =>
-      i.email === email.value && !i.acceptedAt && !i.revokedAt ? { ...i, revokedAt: new Date(now).toISOString() } : i,
-    )
+    s.invites = s.invites.map((i) => (i.email === email.value && !i.acceptedAt && !i.revokedAt ? { ...i, revokedAt: new Date(now).toISOString() } : i))
     const id = uid()
     const invite: CompanyInvite = {
       id,

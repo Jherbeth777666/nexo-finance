@@ -116,14 +116,7 @@ export function validateTransaction(
 }
 
 /** Visões nomeadas: usadas pelo dashboard (links) e pela tela de movimentações (filtros). Fonte única. */
-export type TxView =
-  | 'all'
-  | 'receivables'
-  | 'payables'
-  | 'overdue_receivables'
-  | 'overdue_payables'
-  | 'cash_in_month'
-  | 'cash_out_month'
+export type TxView = 'all' | 'receivables' | 'payables' | 'overdue_receivables' | 'overdue_payables' | 'cash_in_month' | 'cash_out_month'
 
 export const TX_VIEW_LABELS: Record<TxView, string> = {
   all: 'Todos os lançamentos',

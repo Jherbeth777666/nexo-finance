@@ -120,7 +120,8 @@ export default function InvitePage() {
             <p className="eyebrow mb-2">Convite</p>
             <h1 className="text-2xl font-semibold tracking-tight">Convite de demonstração</h1>
             <Notice tone="warn" className="mt-4">
-              Este link é apenas ilustrativo. Convites de equipe funcionam somente com o Supabase configurado; no modo de demonstração nenhum convite é enviado ou aceito.
+              Este link é apenas ilustrativo. Convites de equipe funcionam somente com o Supabase configurado; no modo de demonstração nenhum convite é enviado
+              ou aceito.
             </Notice>
             <ButtonLink to="/app/overview?modo=demo" className="mt-6" variant="primary">
               Abrir demonstração

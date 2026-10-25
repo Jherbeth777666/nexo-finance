@@ -22,7 +22,11 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHeader meta={<p className="eyebrow">Configurações</p>} title="Configurações" description="Empresa, contas, categorias, limites de alertas e integrações." />
+      <PageHeader
+        meta={<p className="eyebrow">Configurações</p>}
+        title="Configurações"
+        description="Empresa, contas, categorias, limites de alertas e integrações."
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <CompanyPanel key={`${data.company.id}:${data.company.name}`} canEdit={canEdit} />
@@ -30,10 +34,18 @@ export default function SettingsPage() {
         <Panel eyebrow="Contas" title="Saldos de abertura">
           <ul className="divide-y divide-line-soft text-sm">
             {balances.map((b) => (
-              <OpeningBalanceRow key={`${b.account.id}:${b.account.openingBalance}`} account={b.account} balance={b.balance} settledCount={b.settledCount} canEdit={canEdit} />
+              <OpeningBalanceRow
+                key={`${b.account.id}:${b.account.openingBalance}`}
+                account={b.account}
+                balance={b.balance}
+                settledCount={b.settledCount}
+                canEdit={canEdit}
+              />
             ))}
           </ul>
-          <p className="mt-3 text-xs text-ink-3">O saldo inicial das projeções vem destes saldos de abertura somados aos lançamentos liquidados — por isso é rastreável.</p>
+          <p className="mt-3 text-xs text-ink-3">
+            O saldo inicial das projeções vem destes saldos de abertura somados aos lançamentos liquidados — por isso é rastreável.
+          </p>
           {!canEdit && <p className="mt-2 text-xs text-ink-3">Somente proprietários e administradores podem alterar os saldos de abertura.</p>}
         </Panel>
 
@@ -64,8 +76,8 @@ export default function SettingsPage() {
         {data.company.isDemo && (
           <Panel eyebrow="Dados de demonstração" title="Reinicializar">
             <p className="text-sm text-ink-2">
-              Gerados em {formatDateBR(data.anchor)}. Reinicializar apaga suas alterações, importações, cenários e estados de alertas neste navegador e recria os dados fictícios com datas
-              relativas a hoje.
+              Gerados em {formatDateBR(data.anchor)}. Reinicializar apaga suas alterações, importações, cenários e estados de alertas neste navegador e recria
+              os dados fictícios com datas relativas a hoje.
             </p>
             {data.anchor !== today && (
               <Notice tone="warn" className="mt-3">
@@ -181,7 +193,8 @@ function OpeningBalanceRow({ account, balance, settledCount, canEdit }: { accoun
         <div>
           <p className="text-ink">{account.name}</p>
           <p className="text-xs text-ink-3">
-            Abertura de <span className="num">{formatBRL(account.openingBalance)}</span> em {formatDateBR(account.openingDate)} · {settledCount} lançamentos liquidados
+            Abertura de <span className="num">{formatBRL(account.openingBalance)}</span> em {formatDateBR(account.openingDate)} · {settledCount} lançamentos
+            liquidados
           </p>
         </div>
         <Money value={balance} tone="risk-only" className="font-medium" />
@@ -235,9 +248,7 @@ const ROLE_LABELS: Record<MemberRole, string> = {
   viewer: 'Somente leitura',
 }
 
-type TeamConfirmation =
-  | { kind: 'revoke'; id: string; email: string }
-  | { kind: 'remove'; userId: string; name: string }
+type TeamConfirmation = { kind: 'revoke'; id: string; email: string } | { kind: 'remove'; userId: string; name: string }
 
 function TeamPanel() {
   const data = useData()

@@ -30,7 +30,14 @@ describe.each(anchors)('dados de demonstração em %s', (today) => {
 
   it('demonstra as situações previstas', () => {
     expect(rules).toEqual(
-      expect.arrayContaining(['expense_increase', 'overdue_receivables', 'overdue_payables', 'payment_concentration', 'suspected_duplicates', 'data_inconsistency']),
+      expect.arrayContaining([
+        'expense_increase',
+        'overdue_receivables',
+        'overdue_payables',
+        'payment_concentration',
+        'suspected_duplicates',
+        'data_inconsistency',
+      ]),
     )
   })
 

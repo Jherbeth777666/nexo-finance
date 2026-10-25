@@ -22,12 +22,9 @@ describe('parseMoney', () => {
     expect(parseMoney(input)).toBe(expected)
   })
 
-  it.each(['', 'abc', '1,2,3,4', '12.34.5', '1.250,505', 'R$', '--10', '1 2', NaN, null, undefined])(
-    'rejeita %s',
-    (input) => {
-      expect(parseMoney(input as never)).toBeNull()
-    },
-  )
+  it.each(['', 'abc', '1,2,3,4', '12.34.5', '1.250,505', 'R$', '--10', '1 2', NaN, null, undefined])('rejeita %s', (input) => {
+    expect(parseMoney(input as never)).toBeNull()
+  })
 })
 
 describe('aritmética em centavos', () => {

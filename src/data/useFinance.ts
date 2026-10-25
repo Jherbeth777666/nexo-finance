@@ -1,14 +1,7 @@
 import { useMemo } from 'react'
 import type { FinancialAlert, AlertState } from '@/domain/types'
 import { detectAlerts } from '@/domain/finance/alerts'
-import {
-  accountBalances,
-  delinquency,
-  monthlyEvolution,
-  payables,
-  periodSummary,
-  receivables,
-} from '@/domain/finance/metrics'
+import { accountBalances, delinquency, monthlyEvolution, payables, periodSummary, receivables } from '@/domain/finance/metrics'
 import { BASE_SCENARIO, projectCashflow, type ScenarioAssumptions } from '@/domain/finance/projection'
 import { addDays } from '@/lib/dates'
 import { useData, useStore } from './store'

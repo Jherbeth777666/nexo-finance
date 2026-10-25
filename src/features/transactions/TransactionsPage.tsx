@@ -144,7 +144,11 @@ export default function TransactionsPage() {
           <Icon name="eye" size={16} className="text-accent" />
           <span className="text-ink-2">Exibindo:</span>
           <span className="font-medium text-ink">
-            {alertFp ? (linkedAlert ? `lançamentos que sustentam "${linkedAlert.title}"` : 'alerta não encontrado (pode ter sido resolvido pelos dados)') : TX_VIEW_LABELS[view]}
+            {alertFp
+              ? linkedAlert
+                ? `lançamentos que sustentam "${linkedAlert.title}"`
+                : 'alerta não encontrado (pode ter sido resolvido pelos dados)'
+              : TX_VIEW_LABELS[view]}
           </span>
           <button onClick={clearContext} className="link ml-auto text-xs">
             Remover
@@ -164,7 +168,9 @@ export default function TransactionsPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line px-1.5 text-2xs text-ink-3 sm:block">/</kbd>
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line px-1.5 text-2xs text-ink-3 sm:block">
+            /
+          </kbd>
         </div>
         <Select aria-label="Período" value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
           <option value="all">Todo o período</option>
@@ -278,7 +284,10 @@ export default function TransactionsPage() {
                           setDialogOpen(true)
                         }
                       }}
-                      className={cx('cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2', t.status === 'cancelled' && 'opacity-55')}
+                      className={cx(
+                        'cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2',
+                        t.status === 'cancelled' && 'opacity-55',
+                      )}
                       aria-label={`${t.description}, ${st}, editar`}
                     >
                       <td className="num px-4 py-2.5 whitespace-nowrap text-ink-2 sm:px-5">{formatDateBR(d)}</td>
@@ -295,7 +304,10 @@ export default function TransactionsPage() {
                         <Money
                           value={t.kind === 'expense' ? -t.amount : t.amount}
                           signed={t.kind !== 'transfer'}
-                          className={cx(t.kind === 'income' ? 'text-pos' : t.kind === 'transfer' ? 'text-ink-3' : 'text-ink', t.status === 'cancelled' && 'line-through')}
+                          className={cx(
+                            t.kind === 'income' ? 'text-pos' : t.kind === 'transfer' ? 'text-ink-3' : 'text-ink',
+                            t.status === 'cancelled' && 'line-through',
+                          )}
                         />
                       </td>
                     </tr>

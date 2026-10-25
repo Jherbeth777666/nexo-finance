@@ -18,16 +18,17 @@ export default function ReportsPage() {
   const [end, setEnd] = useState(addDays(today, 30))
   const invalid = start > end
 
-  const report = useMemo(
-    () => (invalid ? null : buildReport(kind, data, start, end, today, alerts)),
-    [kind, data, start, end, today, alerts, invalid],
-  )
+  const report = useMemo(() => (invalid ? null : buildReport(kind, data, start, end, today, alerts)), [kind, data, start, end, today, alerts, invalid])
   const generatedAt = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
   return (
     <>
       <div className="no-print">
-        <PageHeader meta={<p className="eyebrow">Relatórios</p>} title="Relatórios" description="Gere, confira a prévia e exporte. Os arquivos são montados no seu navegador, apenas com os dados desta empresa." />
+        <PageHeader
+          meta={<p className="eyebrow">Relatórios</p>}
+          title="Relatórios"
+          description="Gere, confira a prévia e exporte. Os arquivos são montados no seu navegador, apenas com os dados desta empresa."
+        />
         <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-line-soft bg-surface p-4">
           <div className="min-w-60 flex-1">
             <Field label="Relatório" htmlFor="r-kind">
@@ -56,7 +57,16 @@ export default function ReportsPage() {
               disabled={!report || !report.rows.length}
               onClick={() => {
                 if (!report) return
-                downloadFile(`nexo-${kind}-${today}.csv`, toCSV([[report.title], [`Gerado em ${generatedAt}`], ...(report.period ? [[`Período ${formatDateBR(report.period.start)} a ${formatDateBR(report.period.end)}`]] : []), [], ...reportToTable(report)]))
+                downloadFile(
+                  `nexo-${kind}-${today}.csv`,
+                  toCSV([
+                    [report.title],
+                    [`Gerado em ${generatedAt}`],
+                    ...(report.period ? [[`Período ${formatDateBR(report.period.start)} a ${formatDateBR(report.period.end)}`]] : []),
+                    [],
+                    ...reportToTable(report),
+                  ]),
+                )
                 toast('CSV gerado')
               }}
             >
@@ -129,7 +139,9 @@ export default function ReportsPage() {
                   </tfoot>
                 )}
               </table>
-              {report.rows.length > 500 && <p className="px-5 py-3 text-xs text-ink-3">Prévia limitada a 500 linhas. O CSV contém todas as {report.rows.length} linhas.</p>}
+              {report.rows.length > 500 && (
+                <p className="px-5 py-3 text-xs text-ink-3">Prévia limitada a 500 linhas. O CSV contém todas as {report.rows.length} linhas.</p>
+              )}
             </div>
           )}
         </article>

@@ -106,7 +106,10 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
 
   return (
     <div className="min-h-screen bg-bg">
-      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface-3 focus:px-3 focus:py-2">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface-3 focus:px-3 focus:py-2"
+      >
         Pular para o conteúdo
       </a>
 
@@ -189,7 +192,10 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
       </div>
 
       {/* Barra inferior (móvel) */}
-      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-[#0d1015]/95 backdrop-blur-sm lg:hidden">
+      <nav
+        aria-label="Navegação principal"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-[#0d1015]/95 backdrop-blur-sm lg:hidden"
+      >
         {NAV.slice(0, 4).map((n) => (
           <NavLink
             key={n.to}

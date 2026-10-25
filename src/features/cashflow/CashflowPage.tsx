@@ -72,10 +72,26 @@ export default function CashflowPage() {
         <Panel className="mb-4" eyebrow="Premissas do cenário personalizado" title="Ajuste e veja o efeito imediatamente">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Atraso dos recebimentos (dias)" htmlFor="c-delay">
-              <Input id="c-delay" type="number" min={0} max={90} className="num" value={custom.receivableDelayDays} onChange={(e) => setCustom({ ...custom, receivableDelayDays: clamp(e.target.value, 0, 90) })} />
+              <Input
+                id="c-delay"
+                type="number"
+                min={0}
+                max={90}
+                className="num"
+                value={custom.receivableDelayDays}
+                onChange={(e) => setCustom({ ...custom, receivableDelayDays: clamp(e.target.value, 0, 90) })}
+              />
             </Field>
             <Field label="Desconsiderar dos recebimentos (%)" htmlFor="c-cut" hint="Margem de prudência, não probabilidade">
-              <Input id="c-cut" type="number" min={0} max={100} className="num" value={custom.receivableHaircutPct} onChange={(e) => setCustom({ ...custom, receivableHaircutPct: clamp(e.target.value, 0, 100) })} />
+              <Input
+                id="c-cut"
+                type="number"
+                min={0}
+                max={100}
+                className="num"
+                value={custom.receivableHaircutPct}
+                onChange={(e) => setCustom({ ...custom, receivableHaircutPct: clamp(e.target.value, 0, 100) })}
+              />
             </Field>
             <Field label="Recebimentos vencidos" htmlFor="c-over">
               <select
@@ -131,7 +147,8 @@ export default function CashflowPage() {
 
       {p.firstNegativeDate ? (
         <Notice tone="risk" title={`Saldo projetado negativo a partir de ${formatDateBR(p.firstNegativeDate)}`} className="mb-4">
-          {p.negativeDays} dia(s) abaixo de zero no horizonte. Menor saldo de <span className="num">{formatBRL(p.minBalance)}</span> em {formatDateBR(p.minDate)}.{' '}
+          {p.negativeDays} dia(s) abaixo de zero no horizonte. Menor saldo de <span className="num">{formatBRL(p.minBalance)}</span> em{' '}
+          {formatDateBR(p.minDate)}.{' '}
           <Link to="/app/simulador" className="link">
             Testar alternativas no simulador
           </Link>
@@ -139,7 +156,10 @@ export default function CashflowPage() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <Panel eyebrow={`${isBase ? 'Cenário-base' : scenarioId === 'conservative' ? 'Cenário conservador' : 'Cenário personalizado'} · ${horizon} dias`} title={`${formatDateBR(p.asOf)} a ${formatDateBR(p.endDate)}`}>
+        <Panel
+          eyebrow={`${isBase ? 'Cenário-base' : scenarioId === 'conservative' ? 'Cenário conservador' : 'Cenário personalizado'} · ${horizon} dias`}
+          title={`${formatDateBR(p.asOf)} a ${formatDateBR(p.endDate)}`}
+        >
           <ProjectionChart
             points={p.days.map((d) => ({ date: d.date, balance: d.balance, inflow: d.inflow, outflow: d.outflow }))}
             compare={isBase ? undefined : base.days.map((d) => ({ date: d.date, balance: d.balance }))}
@@ -157,7 +177,8 @@ export default function CashflowPage() {
           </dl>
           {!isBase && (
             <p className="mt-3 text-xs text-ink-2">
-              Em relação ao cenário-base: saldo mínimo <Money value={cmp.minBalanceDelta} signed tone="auto" />, saldo final <Money value={cmp.endBalanceDelta} signed tone="auto" />
+              Em relação ao cenário-base: saldo mínimo <Money value={cmp.minBalanceDelta} signed tone="auto" />, saldo final{' '}
+              <Money value={cmp.endBalanceDelta} signed tone="auto" />
               {cmp.newNegativeDate && (
                 <>
                   , e passa a ficar negativo em <span className="num text-risk">{formatDateBR(cmp.newNegativeDate)}</span>
@@ -185,7 +206,8 @@ export default function CashflowPage() {
             <div className="mt-4 space-y-1 border-t border-line-soft pt-3 text-xs text-ink-3">
               {p.excluded.overdueReceivables.count > 0 && (
                 <p>
-                  Fora do cálculo: <span className="num text-ink-2">{formatBRL(p.excluded.overdueReceivables.amount)}</span> em {p.excluded.overdueReceivables.count} recebimento(s) vencido(s).{' '}
+                  Fora do cálculo: <span className="num text-ink-2">{formatBRL(p.excluded.overdueReceivables.amount)}</span> em{' '}
+                  {p.excluded.overdueReceivables.count} recebimento(s) vencido(s).{' '}
                   <Link className="link" to="/app/movimentacoes?visao=overdue_receivables">
                     Ver
                   </Link>
@@ -206,7 +228,8 @@ export default function CashflowPage() {
 
           {p.lastInflowDate && p.lastInflowDate < p.endDate && assumptions.estimatedWeeklyIncome === 0 && (
             <Notice tone="warn" title="Cobertura de recebimentos">
-              O último recebimento registrado no horizonte é de {formatDateBR(p.lastInflowDate)}. Depois disso, a projeção só tem saídas e tende a subestimar o caixa. Use o cenário personalizado para informar uma receita semanal estimada.
+              O último recebimento registrado no horizonte é de {formatDateBR(p.lastInflowDate)}. Depois disso, a projeção só tem saídas e tende a subestimar o
+              caixa. Use o cenário personalizado para informar uma receita semanal estimada.
             </Notice>
           )}
 
@@ -261,7 +284,9 @@ export default function CashflowPage() {
                     </td>
                     <td className="max-w-0 px-3 py-2">
                       <p className="truncate text-ink">{e.description}</p>
-                      {(e.adjustment || e.virtual) && <p className="truncate text-xs text-warn/80">{e.virtual ? 'premissa, não é lançamento' : e.adjustment}</p>}
+                      {(e.adjustment || e.virtual) && (
+                        <p className="truncate text-xs text-warn/80">{e.virtual ? 'premissa, não é lançamento' : e.adjustment}</p>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Money value={e.direction === 'in' ? e.amount : -e.amount} signed className={e.direction === 'in' ? 'text-pos' : 'text-ink'} />
@@ -284,7 +309,8 @@ export default function CashflowPage() {
         )}
       </Panel>
       <p className="mt-4 text-xs text-ink-3">
-        Projeções são estimativas baseadas nos lançamentos registrados e nas premissas exibidas. Não constituem garantia de resultado nem recomendação financeira.
+        Projeções são estimativas baseadas nos lançamentos registrados e nas premissas exibidas. Não constituem garantia de resultado nem recomendação
+        financeira.
       </p>
     </>
   )
