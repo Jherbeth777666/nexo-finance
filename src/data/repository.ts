@@ -11,6 +11,7 @@ import type { AlertConfig } from '@/domain/finance/alerts'
 import type { ValidTransaction } from '@/domain/transactions'
 import type { Decision } from '@/domain/finance/simulation'
 import type { ScenarioAssumptions } from '@/domain/finance/projection'
+import type { Cents } from '@/lib/money'
 
 /**
  * Contrato de acesso a dados. A interface não sabe se os dados vêm do modo de demonstração
@@ -67,6 +68,8 @@ export interface FinanceRepository {
   saveAlertConfig(config: AlertConfig): Promise<void>
   saveCustomScenario(s: ScenarioAssumptions): Promise<void>
   addCategory(c: Omit<Category, 'id'>): Promise<Category>
+  updateCompanyName(name: string): Promise<Company>
+  updateAccountOpeningBalance(accountId: string, openingBalance: Cents): Promise<Account>
   saveScenario(s: Omit<SavedScenario, 'id' | 'createdAt'>): Promise<SavedScenario>
   deleteScenario(id: string): Promise<void>
   reset(): Promise<CompanySnapshot>

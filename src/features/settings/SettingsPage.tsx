@@ -1,51 +1,40 @@
 import { useState } from 'react'
 import { useData, useStore } from '@/data/store'
 import type { AlertConfig } from '@/domain/finance/alerts'
+import type { Account } from '@/domain/types'
 import { accountBalances } from '@/domain/finance/metrics'
+import { validateCompanyName, validateOpeningBalance } from '@/domain/company'
 import { RepositoryError } from '@/data/repository'
 import { Button, Field, Input, Money, Notice, PageHeader, Panel, Select, Tag } from '@/components/ui'
 import { ConfirmDialog, useToast } from '@/components/overlay'
 import { formatDateBR } from '@/lib/dates'
-import { formatBRL, parseMoney } from '@/lib/money'
+import { formatBRL, parseMoney, type Cents } from '@/lib/money'
 import { isSupabaseConfigured } from '@/lib/env'
+import { useAuth } from '@/features/auth/session'
 
 export default function SettingsPage() {
   const data = useData()
-  const { today, actions, repo } = useStore()
+  const { today, actions } = useStore()
   const toast = useToast()
   const [confirmReset, setConfirmReset] = useState(false)
   const balances = accountBalances(data.accounts, data.transactions, today)
+  const canEdit = data.company.isDemo || data.company.role === 'owner' || data.company.role === 'admin'
 
   return (
     <>
       <PageHeader meta={<p className="eyebrow">Configurações</p>} title="Configurações" description="Empresa, contas, categorias, limites de alertas e integrações." />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel eyebrow="Empresa" title={data.company.name} actions={data.company.isDemo ? <Tag tone="warn">Demonstração</Tag> : undefined}>
-          <dl className="grid grid-cols-2 gap-4 text-sm">
-            <Item label="Moeda" value="Real brasileiro (BRL)" />
-            <Item label="Fuso horário" value={data.company.timezone} />
-            <Item label="Formato de datas" value="DD/MM/AAAA" />
-            <Item label="Origem dos dados" value={repo.mode === 'demo' ? 'Navegador (isolado, fictício)' : 'Supabase'} />
-          </dl>
-          {data.company.isDemo && <p className="mt-4 text-xs text-ink-3">Edição dos dados da empresa e convite de usuários ficam disponíveis com a autenticação (Fase 3).</p>}
-        </Panel>
+        <CompanyPanel key={`${data.company.id}:${data.company.name}`} canEdit={canEdit} />
 
         <Panel eyebrow="Contas" title="Saldos de abertura">
           <ul className="divide-y divide-line-soft text-sm">
             {balances.map((b) => (
-              <li key={b.account.id} className="flex items-baseline justify-between gap-3 py-2 first:pt-0">
-                <div>
-                  <p className="text-ink">{b.account.name}</p>
-                  <p className="text-xs text-ink-3">
-                    Abertura de <span className="num">{formatBRL(b.account.openingBalance)}</span> em {formatDateBR(b.account.openingDate)} · {b.settledCount} lançamentos liquidados
-                  </p>
-                </div>
-                <Money value={b.balance} tone="risk-only" className="font-medium" />
-              </li>
+              <OpeningBalanceRow key={`${b.account.id}:${b.account.openingBalance}`} account={b.account} balance={b.balance} settledCount={b.settledCount} canEdit={canEdit} />
             ))}
           </ul>
           <p className="mt-3 text-xs text-ink-3">O saldo inicial das projeções vem destes saldos de abertura somados aos lançamentos liquidados — por isso é rastreável.</p>
+          {!canEdit && <p className="mt-2 text-xs text-ink-3">Somente proprietários e administradores podem alterar os saldos de abertura.</p>}
         </Panel>
 
         <CategoriesPanel />
@@ -118,6 +107,123 @@ export default function SettingsPage() {
       />
     </>
   )
+}
+
+function CompanyPanel({ canEdit }: { canEdit: boolean }) {
+  const data = useData()
+  const { repo, actions } = useStore()
+  const auth = useAuth()
+  const toast = useToast()
+  const [name, setName] = useState(data.company.name)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  return (
+    <Panel eyebrow="Empresa" title={data.company.name} actions={data.company.isDemo ? <Tag tone="warn">Demonstração</Tag> : undefined}>
+      <dl className="grid grid-cols-2 gap-4 text-sm">
+        <Item label="Moeda" value="Real brasileiro (BRL)" />
+        <Item label="Fuso horário" value={data.company.timezone} />
+        <Item label="Formato de datas" value="DD/MM/AAAA" />
+        <Item label="Origem dos dados" value={repo.mode === 'demo' ? 'Navegador (isolado, fictício)' : 'Supabase'} />
+      </dl>
+      {canEdit ? (
+        <form
+          className="mt-4 border-t border-line-soft pt-4"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const valid = validateCompanyName(name)
+            if (!valid.ok) return setError(valid.error)
+            setBusy(true)
+            setError(null)
+            try {
+              await actions.updateCompanyName(valid.value)
+              setName(valid.value)
+              // Mantém o nome no seletor do topo em sincronia com o banco.
+              if (auth.status === 'signed_in') await auth.refreshMemberships()
+              toast('Nome da empresa atualizado')
+            } catch (err) {
+              setError(err instanceof RepositoryError ? err.message : 'Não foi possível salvar o nome da empresa.')
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <div className="max-w-sm">
+            <Field label="Nome da empresa" htmlFor="company-name" error={error ?? undefined}>
+              <Input id="company-name" value={name} maxLength={120} invalid={!!error} onChange={(e) => setName(e.target.value)} />
+            </Field>
+          </div>
+          <Button type="submit" className="mt-3" loading={busy}>
+            Salvar nome
+          </Button>
+        </form>
+      ) : (
+        <p className="mt-4 text-xs text-ink-3">Somente proprietários e administradores podem alterar os dados da empresa.</p>
+      )}
+    </Panel>
+  )
+}
+
+function OpeningBalanceRow({ account, balance, settledCount, canEdit }: { account: Account; balance: Cents; settledCount: number; canEdit: boolean }) {
+  const { actions } = useStore()
+  const toast = useToast()
+  const [value, setValue] = useState(centsToInput(account.openingBalance))
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const id = `opening-${account.id}`
+  const label = `Saldo de abertura de ${account.name} (R$)`
+
+  return (
+    <li className="py-2 first:pt-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <p className="text-ink">{account.name}</p>
+          <p className="text-xs text-ink-3">
+            Abertura de <span className="num">{formatBRL(account.openingBalance)}</span> em {formatDateBR(account.openingDate)} · {settledCount} lançamentos liquidados
+          </p>
+        </div>
+        <Money value={balance} tone="risk-only" className="font-medium" />
+      </div>
+      {canEdit && (
+        <form
+          className="mt-2 flex flex-wrap items-end gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const cents = parseMoney(value)
+            if (cents === null) return setError('Valor inválido. Ex.: 1.250,50')
+            const valid = validateOpeningBalance(cents)
+            if (!valid.ok) return setError(valid.error)
+            setBusy(true)
+            setError(null)
+            try {
+              await actions.updateAccountOpeningBalance(account.id, valid.value)
+              setValue(centsToInput(valid.value))
+              toast('Saldo de abertura atualizado')
+            } catch (err) {
+              setError(err instanceof RepositoryError ? err.message : 'Não foi possível salvar o saldo de abertura.')
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <div className="w-48">
+            <Field label={label} htmlFor={id} error={error ?? undefined}>
+              <Input id={id} className="num" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />
+            </Field>
+          </div>
+          <Button type="submit" size="sm" loading={busy} aria-label={`Salvar saldo de abertura de ${account.name}`}>
+            Salvar
+          </Button>
+        </form>
+      )}
+    </li>
+  )
+}
+
+function centsToInput(cents: Cents): string {
+  const sign = cents < 0 ? '-' : ''
+  const abs = Math.abs(cents)
+  return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')}`
 }
 
 function Item({ label, value }: { label: string; value: string }) {

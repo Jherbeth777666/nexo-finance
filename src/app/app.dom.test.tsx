@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { App } from '@/App'
 import { DemoRepository } from '@/data/demoRepository'
+import { DataProvider, useStore } from '@/data/store'
+import type { FinanceRepository } from '@/data/repository'
+import { ToastProvider } from '@/components/overlay'
+import { AuthProvider } from '@/features/auth/session'
+import SettingsPage from '@/features/settings/SettingsPage'
+import { accountBalances } from '@/domain/finance/metrics'
+import type { MemberRole } from '@/domain/types'
+import { formatBRL } from '@/lib/money'
 import { validateLogin, validateSignup } from '@/features/auth/validation'
 
 beforeAll(() => {
@@ -33,6 +41,34 @@ const renderAt = (path: string) =>
       <App />
     </MemoryRouter>,
   )
+
+class RoleRepository extends DemoRepository {
+  constructor(private role: MemberRole) {
+    super(null)
+  }
+  async load() {
+    const snap = await super.load()
+    return { ...snap, company: { ...snap.company, isDemo: false, role: this.role } }
+  }
+}
+
+const renderSettings = (repository?: FinanceRepository) =>
+  render(
+    <AuthProvider>
+      <ToastProvider>
+        <DataProvider repository={repository ?? new DemoRepository(null)}>
+          <MemoryRouter>
+            <ReadySettings />
+          </MemoryRouter>
+        </DataProvider>
+      </ToastProvider>
+    </AuthProvider>,
+  )
+
+function ReadySettings() {
+  const { status } = useStore()
+  return status.kind === 'ready' ? <SettingsPage /> : null
+}
 
 describe('navegação', () => {
   it('abre a visão geral com as quatro áreas da central de decisões', async () => {
@@ -115,5 +151,76 @@ describe('formulários', () => {
     })
     expect(validateSignup({ name: 'Ana', company: 'Loja', email: 'ana@loja.com.br', password: 'senhaforte123', confirm: 'senhaforte123' })).toEqual({}) // gitleaks:allow (senha fictícia de teste)
     expect(validateLogin({ email: '', password: '' })).toMatchObject({ email: 'Informe o e-mail', password: 'Informe a senha' })
+  })
+})
+
+describe('configurações da empresa', () => {
+  it('edita o nome da empresa no modo demonstração', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    const input = await screen.findByLabelText('Nome da empresa')
+    await user.clear(input)
+    await user.type(input, 'Padaria Central')
+    await user.click(screen.getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy()
+  })
+
+  it('mostra erro para nome curto', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    const input = await screen.findByLabelText('Nome da empresa')
+    await user.clear(input)
+    await user.type(input, 'a')
+    await user.click(screen.getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByText('Use de 2 a 120 caracteres.')).toBeTruthy()
+  })
+
+  it('edita o saldo de abertura e o saldo exibido muda sem recarregar', async () => {
+    const user = userEvent.setup()
+    const repo = new DemoRepository(null)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    const before = accountBalances(snap.accounts, snap.transactions, snap.anchor).find((b) => b.account.id === account.id)!.balance
+    const newOpening = 500_000
+    renderSettings(repo)
+
+    const input = await screen.findByLabelText(`Saldo de abertura de ${account.name} (R$)`)
+    await user.clear(input)
+    await user.type(input, '5000,00')
+    await user.click(screen.getByRole('button', { name: `Salvar saldo de abertura de ${account.name}` }))
+
+    const expected = before - account.openingBalance + newOpening
+    const normalized = (s: string | null | undefined) => (s ?? '').replace(/\s/g, ' ')
+    await waitFor(() => {
+      const row = screen.getByText(account.name).closest('li')!
+      expect(normalized(row.textContent)).toContain(normalized(formatBRL(expected)))
+      expect(normalized(row.textContent)).toContain(normalized(formatBRL(newOpening)))
+    })
+  })
+
+  it('mostra erro para saldo inválido', async () => {
+    const user = userEvent.setup()
+    const repo = new DemoRepository(null)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    renderSettings(repo)
+    const input = await screen.findByLabelText(`Saldo de abertura de ${account.name} (R$)`)
+    await user.clear(input)
+    await user.type(input, 'abc')
+    await user.click(screen.getByRole('button', { name: `Salvar saldo de abertura de ${account.name}` }))
+    expect(await screen.findByText('Valor inválido. Ex.: 1.250,50')).toBeTruthy()
+  })
+
+  it.each(['member', 'viewer'] as MemberRole[])('%s vê os dados apenas para leitura', async (role) => {
+    renderSettings(new RoleRepository(role))
+    expect(await screen.findByText('Somente proprietários e administradores podem alterar os dados da empresa.')).toBeTruthy()
+    expect(screen.queryByLabelText('Nome da empresa')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Salvar saldo de abertura/ })).toBeNull()
+  })
+
+  it.each(['owner', 'admin'] as MemberRole[])('%s pode editar os dados da empresa', async (role) => {
+    renderSettings(new RoleRepository(role))
+    expect(await screen.findByLabelText('Nome da empresa')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /Salvar saldo de abertura/ }).length).toBeGreaterThan(0)
   })
 })

@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AlertState, AuditEntry, Category, MemberRole, Transaction } from '@/domain/types'
+import type { Account, AlertState, AuditEntry, Category, Company, MemberRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG, type AlertConfig } from '@/domain/finance/alerts'
 import { CONSERVATIVE_SCENARIO, type ScenarioAssumptions } from '@/domain/finance/projection'
+import { validateCompanyName, validateOpeningBalance } from '@/domain/company'
 import type { ValidTransaction } from '@/domain/transactions'
 import { todayIn } from '@/lib/dates'
+import type { Cents } from '@/lib/money'
 import { RepositoryError, type CompanySnapshot, type FinanceRepository, type ImportRecord, type SavedScenario } from './repository'
 import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
 
@@ -246,6 +248,48 @@ export class SupabaseRepository implements FinanceRepository {
     s.categories = [...s.categories, row]
     await this.refreshAudit()
     return row
+  }
+
+  async updateCompanyName(name: string): Promise<Company> {
+    const valid = validateCompanyName(name)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // Nunca envie company_id no payload: a empresa é identificada apenas pelo filtro e pelo RLS.
+    const rows = check(
+      await this.sb.from('companies').update({ name: valid.value }).eq('id', this.companyId).select('id,name,timezone,currency'),
+    ) as { id: string; name: string; timezone: string; currency: 'BRL' }[]
+    // RLS bloqueia UPDATE silenciosamente (0 linhas) em vez de gerar erro.
+    if (!rows.length) throw new RepositoryError('Empresa não encontrada ou sem permissão para editar.')
+    const row = rows[0]
+    const s = await this.state()
+    s.company = { ...s.company, id: row.id, name: row.name, timezone: row.timezone, currency: row.currency }
+    await this.refreshAudit()
+    return structuredClone(s.company)
+  }
+
+  async updateAccountOpeningBalance(accountId: string, openingBalance: Cents): Promise<Account> {
+    const valid = validateOpeningBalance(openingBalance)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // A conta é localizada pelo filtro; company_id jamais vai no payload de alteração.
+    const rows = check(
+      await this.sb
+        .from('accounts')
+        .update({ opening_balance: centsToNumeric(valid.value) })
+        .eq('id', accountId)
+        .eq('company_id', this.companyId)
+        .select('id,name,opening_balance,opening_date'),
+    ) as { id: string; name: string; opening_balance: string; opening_date: string }[]
+    if (!rows.length) throw new RepositoryError('Conta não encontrada ou sem permissão para editar.')
+    const row = rows[0]
+    const account: Account = {
+      id: row.id,
+      name: row.name,
+      openingBalance: numericToCents(row.opening_balance),
+      openingDate: row.opening_date,
+    }
+    const s = await this.state()
+    s.accounts = s.accounts.map((a) => (a.id === accountId ? account : a))
+    await this.refreshAudit()
+    return structuredClone(account)
   }
 
   async saveScenario(sc: Omit<SavedScenario, 'id' | 'createdAt'>): Promise<SavedScenario> {

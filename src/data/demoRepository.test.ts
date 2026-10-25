@@ -1,5 +1,6 @@
 import { DemoRepository } from './demoRepository'
 import { validateTransaction, emptyInput } from '@/domain/transactions'
+import { accountBalances } from '@/domain/finance/metrics'
 
 class MemoryStorage implements Storage {
   private m = new Map<string, string>()
@@ -101,6 +102,47 @@ describe('repositório de demonstração', () => {
     const repo = new DemoRepository(new MemoryStorage())
     await repo.addCategory({ name: 'Marketing', kind: 'expense' })
     await expect(repo.addCategory({ name: ' marketing ', kind: 'expense' })).rejects.toThrow(/Já existe/)
+  })
+
+  it('renomeia a empresa, persiste e registra auditoria', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    const before = await repo.load()
+    const company = await repo.updateCompanyName('  Padaria Central  ')
+    expect(company.name).toBe('Padaria Central')
+    const after = await new DemoRepository(storage).load()
+    expect(after.company.name).toBe('Padaria Central')
+    expect(after.audit[0]).toMatchObject({ action: 'update', entity: 'company', entityId: before.company.id })
+    expect(after.audit[0].summary).toMatch(/Padaria Central/)
+  })
+
+  it('rejeita nome de empresa inválido', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    await expect(repo.updateCompanyName(' a ')).rejects.toThrow(/2 a 120/)
+    await expect(repo.updateCompanyName('x'.repeat(121))).rejects.toThrow(/2 a 120/)
+  })
+
+  it('altera o saldo de abertura, persiste, audita e recalcula o saldo da conta', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    const snap = await repo.load()
+    const account = snap.accounts[0]
+    const before = accountBalances(snap.accounts, snap.transactions, snap.anchor).find((b) => b.account.id === account.id)!
+    const updated = await repo.updateAccountOpeningBalance(account.id, 0)
+    expect(updated.openingBalance).toBe(0)
+    const after = await new DemoRepository(storage).load()
+    expect(after.accounts.find((a) => a.id === account.id)?.openingBalance).toBe(0)
+    const balance = accountBalances(after.accounts, after.transactions, after.anchor).find((b) => b.account.id === account.id)!
+    expect(balance.balance).toBe(before.balance - account.openingBalance)
+    expect(after.audit[0]).toMatchObject({ action: 'update', entity: 'account', entityId: account.id })
+  })
+
+  it('aceita saldo de abertura zero e negativo, mas rejeita conta inexistente e valor inválido', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    await expect(repo.updateAccountOpeningBalance(snap.accounts[0].id, -5000)).resolves.toMatchObject({ openingBalance: -5000 })
+    await expect(repo.updateAccountOpeningBalance('nao-existe', 100)).rejects.toThrow(/não encontrada/)
+    await expect(repo.updateAccountOpeningBalance(snap.accounts[0].id, 1.5)).rejects.toThrow(/inválido/)
   })
 })
 

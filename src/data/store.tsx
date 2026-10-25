@@ -26,6 +26,8 @@ interface StoreValue {
     saveAlertConfig: FinanceRepository['saveAlertConfig']
     saveCustomScenario: FinanceRepository['saveCustomScenario']
     addCategory: FinanceRepository['addCategory']
+    updateCompanyName: FinanceRepository['updateCompanyName']
+    updateAccountOpeningBalance: FinanceRepository['updateAccountOpeningBalance']
     saveScenario: FinanceRepository['saveScenario']
     deleteScenario: FinanceRepository['deleteScenario']
     reset: () => Promise<void>
@@ -88,6 +90,16 @@ export function DataProvider({ children, repository }: { children: ReactNode; re
       },
       addCategory: async (c) => {
         const r = await repo.addCategory(c)
+        await refresh()
+        return r
+      },
+      updateCompanyName: async (name) => {
+        const r = await repo.updateCompanyName(name)
+        await refresh()
+        return r
+      },
+      updateAccountOpeningBalance: async (id, cents) => {
+        const r = await repo.updateAccountOpeningBalance(id, cents)
         await refresh()
         return r
       },

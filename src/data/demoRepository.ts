@@ -1,8 +1,10 @@
-import type { AlertState, AuditEntry, Transaction } from '@/domain/types'
+import type { Account, AlertState, AuditEntry, Company, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG } from '@/domain/finance/alerts'
 import { CONSERVATIVE_SCENARIO } from '@/domain/finance/projection'
 import type { ValidTransaction } from '@/domain/transactions'
+import { validateCompanyName, validateOpeningBalance } from '@/domain/company'
 import { todayIn } from '@/lib/dates'
+import { assertCents, formatBRL, type Cents } from '@/lib/money'
 import { buildDemoDataset } from './demo/seed'
 import { RepositoryError, type CompanySnapshot, type FinanceRepository } from './repository'
 
@@ -150,6 +152,35 @@ export class DemoRepository implements FinanceRepository {
     this.audit({ action: 'create', entity: 'category', entityId: cat.id, summary: `Criou a categoria "${cat.name}"` })
     this.write()
     return cat
+  }
+
+  async updateCompanyName(name: string): Promise<Company> {
+    const valid = validateCompanyName(name)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    const s = this.read()
+    s.company = { ...s.company, name: valid.value }
+    this.audit({ action: 'update', entity: 'company', entityId: s.company.id, summary: `Renomeou a empresa para "${valid.value}"` })
+    this.write()
+    return structuredClone(s.company)
+  }
+
+  async updateAccountOpeningBalance(accountId: string, openingBalance: Cents): Promise<Account> {
+    const valid = validateOpeningBalance(openingBalance)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    const value = assertCents(valid.value)
+    const s = this.read()
+    const prev = s.accounts.find((a) => a.id === accountId)
+    if (!prev) throw new RepositoryError('Conta não encontrada')
+    const account = { ...prev, openingBalance: value }
+    s.accounts = s.accounts.map((a) => (a.id === accountId ? account : a))
+    this.audit({
+      action: 'update',
+      entity: 'account',
+      entityId: accountId,
+      summary: `Alterou o saldo de abertura de "${account.name}" para ${formatBRL(value)}`,
+    })
+    this.write()
+    return structuredClone(account)
   }
 
   async saveScenario(sc: Parameters<FinanceRepository['saveScenario']>[0]) {

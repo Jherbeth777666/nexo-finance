@@ -120,7 +120,7 @@ export interface AuditEntry {
   id: string
   at: string
   actor: string
-  action: 'create' | 'update' | 'delete' | 'import' | 'reset' | 'alert_state'
+  action: 'create' | 'update' | 'delete' | 'import' | 'reset' | 'alert_state' | 'settings'
   entity: string
   entityId: string
   summary: string
