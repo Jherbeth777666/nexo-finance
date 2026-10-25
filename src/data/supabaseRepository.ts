@@ -332,7 +332,7 @@ export class SupabaseRepository implements FinanceRepository {
     if (input.stock !== null && input.stockUpdatedAt !== undefined && input.stockUpdatedAt !== null && !isISODate(input.stockUpdatedAt)) {
       throw new RepositoryError('Data do estoque inválida.')
     }
-    const today = todayIn()
+    const today = todayIn((await this.state()).company.timezone)
     if (input.stock !== null && input.stockUpdatedAt && isISODate(input.stockUpdatedAt) && input.stockUpdatedAt > today) {
       throw new RepositoryError('A data do estoque não pode estar no futuro.')
     }

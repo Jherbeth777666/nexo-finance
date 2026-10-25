@@ -175,6 +175,20 @@ describe('mapeamento de planilha de vendas por item', () => {
     expect(summarizeProductSales(rows)).toMatchObject({ total: 7, valid: 5, withErrors: 0, withWarnings: 4 })
   })
 
+  it('recusa na pré-validação o que o banco recusaria (tetos numéricos e origem longa)', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Quantidade', 'Valor total', 'Documento'],
+      ['20/03/2026', 'Arroz', '7891234567890', '10,00', ''],
+      ['20/03/2026', 'Arroz', '1', '10,00', 'x'.repeat(320)],
+      ['20/03/2026', 'Arroz', '1', '10,00', 'NF-1'],
+    ])
+    const m = suggestProductMapping(t.headers)
+    const r = validateProductSaleRows(t, { ...m, externalId: 4 }, { products: [], existing: [], asOf })
+    expect(r[0].errors.join()).toMatch(/Quantidade acima do limite/)
+    expect(r[1].errors.join()).toMatch(/longo demais/)
+    expect(r[2].include).toBe(true)
+  })
+
   it('sinaliza divergência entre total e unitário usando o total', () => {
     const t = toTable([
       ['Data', 'Produto', 'Qtd', 'Total', 'Unitário'],

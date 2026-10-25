@@ -83,6 +83,7 @@ export default function ProductsPage() {
       .catch(() => setLoadError('Não foi possível carregar as vendas por item.'))
   }
 
+  const latestImportId = data.imports[0]?.id ?? null
   useEffect(() => {
     let active = true
     setSales(null)
@@ -94,7 +95,8 @@ export default function ProductsPage() {
       active = false
     }
     // `data.imports`/`data.anchor` mudam após importar ou reiniciar a base: recarrega as vendas.
-  }, [actions, data.anchor, data.imports, from, today])
+    // Depende do id da última importação (não da referência do array, recriada a cada refresh).
+  }, [actions, data.anchor, latestImportId, data.imports.length, from, today])
 
   const derived = useMemo(() => {
     const list = sales ?? []

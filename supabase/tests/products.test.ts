@@ -30,6 +30,8 @@ let company = ''
 let otherCompany = ''
 let rateCompany = ''
 let hardCompany = ''
+let costActor: Actor
+let costCompany = ''
 
 async function makeUser(label: string): Promise<Actor> {
   const email = `nexo-produtos-${run}-${label}@example.com`
@@ -452,12 +454,57 @@ describe.skipIf(!configured)('produtos, vendas por item e eventos locais', () =>
     const r = await owner.sb.rpc('consume_rate_limit', { p_bucket: 'import_products', p_max: 10000, p_window_seconds: 1 })
     expect(r.error).not.toBeNull()
   })
+
+  it('custo do cadastro: edição manual vale a partir de hoje e venda antiga não regride o custo', async () => {
+    costActor = await makeUser('e')
+    costCompany = await createCompany(costActor, `Produtos custo ${run}`)
+    const name = `Café custo ${run}`
+    const cost = async () => (await costActor.sb.from('products').select('cost_price,cost_updated_at').eq('company_id', costCompany).single()).data!
+
+    // Venda recente define o custo e a data.
+    expect(
+      (
+        await costActor.sb.rpc(
+          'import_product_sales',
+          importArgs([saleRow({ product_name: name, product_code: null, sale_date: addDays(today, -1), unit_cost: '10.00', stock: null })], costCompany),
+        )
+      ).error,
+    ).toBeNull()
+    expect(await cost()).toMatchObject({ cost_updated_at: addDays(today, -1) })
+    expect(Number((await cost()).cost_price)).toBe(10)
+
+    // Venda mais antiga com outro custo, importada depois, não regride.
+    expect(
+      (
+        await costActor.sb.rpc(
+          'import_product_sales',
+          importArgs([saleRow({ product_name: name, product_code: null, sale_date: addDays(today, -5), unit_cost: '7.00', stock: null })], costCompany),
+        )
+      ).error,
+    ).toBeNull()
+    expect(Number((await cost()).cost_price)).toBe(10)
+
+    // Edição manual no catálogo passa a valer hoje.
+    const edited = await costActor.sb.from('products').update({ cost_price: '12.00' }).eq('company_id', costCompany).select('cost_updated_at')
+    expect(edited.data).toEqual([{ cost_updated_at: today }])
+
+    // Venda de ontem com custo diferente não sobrescreve o custo informado à mão.
+    expect(
+      (
+        await costActor.sb.rpc(
+          'import_product_sales',
+          importArgs([saleRow({ product_name: name, product_code: null, sale_date: addDays(today, -1), unit_cost: '9.00', stock: null })], costCompany),
+        )
+      ).error,
+    ).toBeNull()
+    expect(Number((await cost()).cost_price)).toBe(12)
+  })
 })
 
 afterAll(async () => {
   if (!admin) return
-  for (const id of [company, otherCompany, rateCompany, hardCompany]) if (id) await admin.from('companies').delete().eq('id', id)
-  for (const id of [owner?.id, other?.id, rate?.id, hard?.id]) if (id) await admin.auth.admin.deleteUser(id)
+  for (const id of [company, otherCompany, rateCompany, hardCompany, costCompany]) if (id) await admin.from('companies').delete().eq('id', id)
+  for (const id of [owner?.id, other?.id, rate?.id, hard?.id, costActor?.id]) if (id) await admin.auth.admin.deleteUser(id)
 })
 
 describe.runIf(!configured)('configuração', () => {

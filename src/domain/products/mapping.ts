@@ -108,6 +108,11 @@ export function productSourceRef(sale: {
 /** Nome normalizado, sem acentos/espaços duplicados, para casar produtos entre planilhas. */
 export const productKey = (name: string) => norm(name)
 
+/** Maior valor absoluto (em centavos ou milésimos) que cabe em numeric(14,2)/numeric(14,3). */
+export const DB_NUMERIC_LIMIT = 100_000_000_000_000
+/** Tamanho máximo de source_ref aceito pelo banco (com folga para o sufixo #n de repetidas). */
+export const MAX_SOURCE_REF = 296
+
 export function validateProductSaleRows(table: RawTable, mapping: ProductColumnMapping, ctx: ProductImportContext): ProductSaleRowResult[] {
   const byCode = new Map<string, Product>()
   const byName = new Map<string, Product>()
@@ -172,6 +177,12 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
     if (costRaw != null && cellStr(costRaw) !== '' && unitCost === null) warnings.push(`Custo unitário inválido: "${cellStr(costRaw)}"; será ignorado`)
     if (unitCost !== null && unitCost < 0) warnings.push('Custo unitário negativo; será ignorado')
 
+    // Tetos de numeric(14,3) (quantidade em milésimos) e numeric(14,2) (valores em centavos): acima
+    // disso o banco recusa o lote inteiro (ex.: código de barras colado na coluna de quantidade).
+    if (quantity !== null && Math.abs(quantity) >= DB_NUMERIC_LIMIT) errors.push('Quantidade acima do limite aceito')
+    if (revenue !== null && Math.abs(revenue) >= DB_NUMERIC_LIMIT) errors.push('Valor acima do limite aceito')
+    if (unitCost !== null && Math.abs(unitCost) >= DB_NUMERIC_LIMIT) errors.push('Custo acima do limite aceito')
+
     const stockRaw = get('stock')
     const stock = stockRaw == null || cellStr(stockRaw) === '' ? null : parseQuantity(stockRaw)
     if (stockRaw != null && cellStr(stockRaw) !== '' && stock === null) warnings.push(`Estoque inválido: "${cellStr(stockRaw)}"; será ignorado`)
@@ -184,6 +195,7 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
     if (quantity !== null && quantity <= 0) warnings.push('Quantidade zero ou negativa: linha ignorada')
     if (revenue !== null && revenue <= 0) warnings.push('Valor zero ou negativo (devolução): linha ignorada')
     if (stock !== null && stock < 0) warnings.push('Estoque negativo: será ignorado')
+    if (stock !== null && Math.abs(stock) >= DB_NUMERIC_LIMIT) errors.push('Estoque acima do limite aceito')
 
     if (cancelled) {
       return { index: i + 2, raw, sale: null, errors: [], warnings, alreadyImported: false, include: false }
@@ -218,6 +230,17 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
       unitCost: unitCost !== null && unitCost >= 0 ? unitCost : null,
       stock: stock !== null && stock >= 0 ? stock : null,
       sourceRef: productSourceRef({ productCode, productName, saleDate, quantity: quantity!, revenue: revenue!, externalId }),
+    }
+    if (sale.sourceRef.length > MAX_SOURCE_REF) {
+      return {
+        index: i + 2,
+        raw,
+        sale: null,
+        errors: ['Identificador da venda longo demais (máx. 300 caracteres)'],
+        warnings: [],
+        alreadyImported: false,
+        include: false,
+      }
     }
     const seen = seenInFile.get(sale.sourceRef)
     if (seen) {
