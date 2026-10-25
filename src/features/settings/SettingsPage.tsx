@@ -66,9 +66,16 @@ export default function SettingsPage() {
             <li className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-ink">Análises por IA</p>
-                <p className="text-xs text-ink-3">Executadas somente no servidor. A chave nunca fica no navegador.</p>
+                <p className="text-xs text-ink-3">
+                  Executadas somente no servidor, com dados agregados e revisão automática. A chave do provedor nunca fica no navegador.
+                </p>
+                {!data.company.isDemo && (
+                  <p className="mt-1 text-xs text-ink-3">
+                    Desligada por padrão: o plano trial permite 0 análises por mês. Para ligar, configure o provedor e aumente a cota do plano no servidor.
+                  </p>
+                )}
               </div>
-              <Tag>Não configurado</Tag>
+              <Tag tone={data.company.isDemo ? 'neutral' : 'warn'}>{data.company.isDemo ? 'Indisponível na demonstração' : 'Desligada por padrão'}</Tag>
             </li>
           </ul>
         </Panel>

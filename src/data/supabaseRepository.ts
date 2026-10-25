@@ -9,6 +9,7 @@ import { addDays, todayIn } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
 import {
   RepositoryError,
+  type AiAnalysisResponse,
   type BaseProjection,
   type CompanySnapshot,
   type CreateInviteInput,
@@ -313,6 +314,24 @@ export class SupabaseRepository implements FinanceRepository {
     }
   }
 
+  async requestAnalysis(agent: Parameters<FinanceRepository['requestAnalysis']>[0]): Promise<AiAnalysisResponse> {
+    const { data, error } = await this.sb.functions.invoke('ai-analysis', { body: { companyId: this.companyId, agent } })
+    if (error) throw new RepositoryError(await aiFunctionsErrorMessage(error))
+    const result = data as Partial<AiAnalysisResponse> | null
+    if (!result || typeof result !== 'object' || !result.analysis || !result.facts || !result.review) {
+      throw new RepositoryError('Resposta inválida do servidor de análises.')
+    }
+    return {
+      analysis: result.analysis,
+      facts: result.facts,
+      review: result.review,
+      status: result.review.valid ? 'ok' : 'rejected',
+      cached: !!result.cached,
+      provider: typeof result.provider === 'string' ? result.provider : undefined,
+      model: typeof result.model === 'string' ? result.model : undefined,
+    }
+  }
+
   async setAlertState(fingerprint: string, state: AlertState, note?: string) {
     const row = check(
       await this.sb
@@ -541,6 +560,22 @@ interface BaseProjectionRow {
   overdue_receivables_count: number
   beyond_horizon_amount: string | number
   beyond_horizon_count: number
+}
+
+async function aiFunctionsErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context
+  if (context && typeof context === 'object' && typeof (context as Response).json === 'function') {
+    const response = context as Response
+    try {
+      const body = (await response.json()) as { error?: unknown }
+      if (typeof body.error === 'string' && body.error.length <= 200) return body.error
+    } catch {
+      // Corpo indisponível: usa o status abaixo.
+    }
+    if (response.status === 429) return 'Limite de análises de IA atingido. Tente novamente mais tarde.'
+    if (response.status === 503) return 'IA não configurada neste ambiente.'
+  }
+  return 'Não foi possível gerar a análise. Tente novamente.'
 }
 
 /** Mensagem da Edge Function sem expor detalhes internos; erros de linha vêm da validação pura. */

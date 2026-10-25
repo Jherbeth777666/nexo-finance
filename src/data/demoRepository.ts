@@ -1,4 +1,4 @@
-import type { Account, AlertState, AuditEntry, Company, CompanyInvite, CompanyMember, InviteRole, Transaction } from '@/domain/types'
+import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG } from '@/domain/finance/alerts'
 import { accountBalances, monthlyEvolution } from '@/domain/finance/metrics'
 import { BASE_SCENARIO, CONSERVATIVE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
@@ -6,6 +6,8 @@ import type { ValidTransaction } from '@/domain/transactions'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import { addDays, todayIn } from '@/lib/dates'
 import { assertCents, formatBRL, type Cents } from '@/lib/money'
+import { buildLocalAnalysis } from '@/domain/ai/analysis'
+import type { CategoryTotal } from '@/domain/ai/facts'
 import { buildDemoDataset } from './demo/seed'
 import { RepositoryError, type BaseProjection, type CompanySnapshot, type CreateInviteInput, type FinanceRepository } from './repository'
 
@@ -350,12 +352,48 @@ export class DemoRepository implements FinanceRepository {
     }
   }
 
+  async requestAnalysis(agent: Parameters<FinanceRepository['requestAnalysis']>[0]) {
+    const s = this.read()
+    const asOf = todayIn(s.company.timezone)
+    const projection = projectCashflow({ accounts: s.accounts, transactions: s.transactions, asOf, horizonDays: 30, assumptions: BASE_SCENARIO })
+    const result = buildLocalAnalysis(agent, {
+      asOf,
+      projection,
+      categoryTotals: categoryTotals(s.categories, s.transactions, asOf, 90),
+      scenarios: s.scenarios.map((sc) => ({ horizonDays: sc.horizonDays, asOf: sc.asOf, resultSummary: sc.resultSummary })),
+    })
+    return {
+      analysis: result.analysis,
+      facts: result.facts,
+      review: result.review,
+      status: result.review.valid ? ('ok' as const) : ('rejected' as const),
+      cached: false,
+      provider: 'local-rules',
+    }
+  }
+
   async reset(): Promise<CompanySnapshot> {
     this.state = fresh()
     this.audit({ action: 'reset', entity: 'company', entityId: this.state.company.id, summary: 'Reinicializou os dados de demonstração' })
     this.write()
     return structuredClone(this.state)
   }
+}
+
+function categoryTotals(categories: Category[], transactions: Transaction[], asOf: string, days: number): CategoryTotal[] {
+  const start = addDays(asOf, -(days - 1))
+  const byId = new Map(categories.map((c) => [c.id, c]))
+  const totals = new Map<string, CategoryTotal>()
+  for (const tx of transactions) {
+    if (tx.status === 'cancelled' || tx.kind === 'transfer' || !tx.categoryId) continue
+    if (tx.competenceDate < start || tx.competenceDate > asOf) continue
+    const category = byId.get(tx.categoryId)
+    if (!category) continue
+    const current = totals.get(category.id) ?? { name: category.name, kind: category.kind, total: 0 }
+    current.total += tx.amount
+    totals.set(category.id, current)
+  }
+  return [...totals.values()]
 }
 
 function roleLabel(role: InviteRole | 'owner'): string {

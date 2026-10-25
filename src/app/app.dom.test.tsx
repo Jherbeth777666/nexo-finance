@@ -9,6 +9,8 @@ import type { FinanceRepository } from '@/data/repository'
 import { ToastProvider } from '@/components/overlay'
 import { AuthProvider } from '@/features/auth/session'
 import SettingsPage from '@/features/settings/SettingsPage'
+import IntelligencePage from '@/features/intelligence/IntelligencePage'
+import type { AiAnalysisResponse } from '@/data/repository'
 import { accountBalances } from '@/domain/finance/metrics'
 import type { MemberRole } from '@/domain/types'
 import { formatBRL } from '@/lib/money'
@@ -71,6 +73,48 @@ function ReadySettings() {
   return status.kind === 'ready' ? <SettingsPage /> : null
 }
 
+function ReadyIntelligence() {
+  const { status } = useStore()
+  return status.kind === 'ready' ? <IntelligencePage /> : null
+}
+
+const renderIntelligence = (repository: FinanceRepository) =>
+  render(
+    <ToastProvider>
+      <DataProvider repository={repository}>
+        <MemoryRouter>
+          <ReadyIntelligence />
+        </MemoryRouter>
+      </DataProvider>
+    </ToastProvider>,
+  )
+
+const aiResponse = (over: Partial<AiAnalysisResponse> = {}): AiAnalysisResponse => ({
+  analysis: {
+    agent: 'cash',
+    generatedBy: 'ai',
+    summary: 'Resumo gerado pelo servidor.',
+    period: { start: '2026-03-15', end: '2026-04-13' },
+    evidence: [{ claim: 'Saldo registrado consultado.', factKey: 'start' }],
+    assumptions: ['Cenário-base.'],
+    limitations: ['Estimativa baseada nos lançamentos registrados.'],
+    suggestedActions: ['Acompanhar o caixa.'],
+  },
+  facts: { start: { label: 'Saldo registrado', value: 100_000 } },
+  review: { valid: true, issues: [] },
+  status: 'ok',
+  cached: true,
+  provider: 'fake',
+  ...over,
+})
+
+function serverRepository(request: FinanceRepository['requestAnalysis']): FinanceRepository {
+  const repo = new DemoRepository(null)
+  Object.defineProperty(repo, 'mode', { value: 'supabase' })
+  Object.defineProperty(repo, 'requestAnalysis', { value: request })
+  return repo
+}
+
 describe('navegação', () => {
   it('abre a visão geral com as quatro áreas da central de decisões', async () => {
     renderAt('/app/overview')
@@ -90,6 +134,57 @@ describe('navegação', () => {
     expect(await screen.findByRole('heading', { name: 'Para onde o caixa está indo' }, { timeout: 5000 })).toBeTruthy()
     await user.click(within(nav).getByRole('link', { name: /Simulador/ }))
     expect(await screen.findByRole('heading', { name: 'Teste antes de decidir' }, { timeout: 5000 })).toBeTruthy()
+  })
+
+  it('inteligência em demonstração mostra exemplo local sem chamar IA', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/inteligencia')
+    expect(await screen.findByRole('heading', { name: 'Agente de caixa' }, { timeout: 5000 })).toBeTruthy()
+    expect(screen.getByText('Análises por IA indisponíveis')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /Ver exemplo demonstrativo/ }))
+    expect(await screen.findByText('Exemplo demonstrativo')).toBeTruthy()
+    expect(screen.getByText(/Nenhuma IA foi chamada/)).toBeTruthy()
+    expect(screen.getByText(/Revisor de análises/)).toBeTruthy()
+  })
+
+  it('inteligência no servidor gera por agente e mostra o selo do revisor', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const repo = serverRepository(async (agent) => {
+      calls.push(agent)
+      return aiResponse()
+    })
+    renderIntelligence(repo)
+
+    expect(await screen.findByRole('heading', { name: 'Agente de análise' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Resumo gerado pelo servidor.')).toBeTruthy()
+    expect(screen.getByText('Gerado por IA, revisado automaticamente')).toBeTruthy()
+    expect(screen.getByText('Do cache')).toBeTruthy()
+
+    await user.click(screen.getByRole('radio', { name: 'Despesas' }))
+    await user.click(screen.getByRole('button', { name: 'Gerar análise' }))
+    await waitFor(() => expect(calls).toEqual(['cash', 'expenses']))
+  })
+
+  it('inteligência no servidor mostra erro e análise reprovada sem confundir com confiável', async () => {
+    const user = userEvent.setup()
+    const failing = serverRepository(async () => {
+      throw new Error('Cota mensal de análises de IA esgotada.')
+    })
+    renderIntelligence(failing)
+    await user.click(await screen.findByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Cota mensal de análises de IA esgotada.')).toBeTruthy()
+    cleanup()
+
+    const rejected = serverRepository(async () =>
+      aiResponse({ status: 'rejected', review: { valid: false, issues: ['Valor citado não corresponde a nenhum cálculo: R$ 9,99'] } }),
+    )
+    renderIntelligence(rejected)
+    await user.click(await screen.findByRole('button', { name: 'Gerar análise' }))
+    expect(await screen.findByText('Gerada por IA — reprovada pelo revisor')).toBeTruthy()
+    expect(screen.getByText(/Não use como referência/)).toBeTruthy()
+    expect(screen.queryByText('Gerado por IA, revisado automaticamente')).toBeNull()
   })
 
   it('rota inexistente mostra página não encontrada', async () => {
@@ -156,6 +251,12 @@ describe('formulários', () => {
 })
 
 describe('configurações da empresa', () => {
+  it('explica que a IA está desligada por padrão no plano trial', async () => {
+    renderSettings(new RoleRepository('owner'))
+    expect(await screen.findByText('Desligada por padrão')).toBeTruthy()
+    expect(screen.getByText(/plano trial permite 0 análises por mês/)).toBeTruthy()
+  })
+
   it('edita o nome da empresa no modo demonstração', async () => {
     const user = userEvent.setup()
     renderSettings()

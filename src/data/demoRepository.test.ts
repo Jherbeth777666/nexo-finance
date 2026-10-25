@@ -63,6 +63,18 @@ describe('repositório de demonstração', () => {
     expect((await repo.load()).transactions.length).toBeGreaterThan(0)
   })
 
+  it('gera análise local por agente sem provedor externo', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    for (const agent of ['cash', 'expenses', 'scenarios'] as const) {
+      const result = await repo.requestAnalysis(agent)
+      expect(result.provider).toBe('local-rules')
+      expect(result.cached).toBe(false)
+      expect(result.analysis.agent).toBe(agent)
+      expect(result.analysis.generatedBy).toBe('local-rules')
+      expect(Object.keys(result.facts).length).toBeGreaterThan(0)
+    }
+  })
+
   it('reinicializar apaga alterações', async () => {
     const repo = new DemoRepository(new MemoryStorage())
     const snap = await repo.load()

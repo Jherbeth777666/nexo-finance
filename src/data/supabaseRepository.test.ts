@@ -360,6 +360,47 @@ describe('agregados e importação no repositório Supabase', () => {
     })
   })
 
+  it('solicita análise por agente à Edge Function e normaliza a resposta', async () => {
+    const data = {
+      analysis: {
+        agent: 'cash',
+        generatedBy: 'ai',
+        summary: 'Resumo.',
+        period: { start: '2026-03-15', end: '2026-04-13' },
+        evidence: [{ claim: 'Saldo: R$ 10,00', factKey: 'start' }],
+        assumptions: ['Premissa.'],
+        limitations: ['Limitação.'],
+        suggestedActions: [],
+      },
+      facts: { start: { label: 'Saldo', value: 1_000 } },
+      review: { valid: true, issues: [] },
+      cached: true,
+      provider: 'fake',
+      model: 'fake',
+    }
+    const { client, rpcCalls, invokeCalls } = fakeRepos([], { data, error: null })
+    const repo = new SupabaseRepository(client, 'empresa-1', 'member')
+
+    const result = await repo.requestAnalysis('cash')
+    expect(rpcCalls).toHaveLength(0)
+    expect(invokeCalls[0]).toEqual({ name: 'ai-analysis', body: { companyId: 'empresa-1', agent: 'cash' } })
+    expect(result).toMatchObject({ status: 'ok', cached: true, provider: 'fake', model: 'fake' })
+  })
+
+  it('preserva a mensagem de IA desligada e recusa resposta sem análise', async () => {
+    const error = {
+      message: 'Edge Function returned a non-2xx status code',
+      context: new Response(JSON.stringify({ error: 'IA não configurada neste ambiente.' }), { status: 503 }),
+    }
+    const first = fakeRepos([], { data: null, error })
+    await expect(new SupabaseRepository(first.client, 'empresa-1', 'member').requestAnalysis('cash')).rejects.toThrow('IA não configurada neste ambiente.')
+
+    const second = fakeRepos([], { data: { status: 'ok' }, error: null })
+    await expect(new SupabaseRepository(second.client, 'empresa-1', 'member').requestAnalysis('cash')).rejects.toThrow(
+      'Resposta inválida do servidor de análises.',
+    )
+  })
+
   it('propaga os erros por linha da Edge Function sem expor o JWT', async () => {
     const error = {
       message: 'Edge Function returned a non-2xx status code',

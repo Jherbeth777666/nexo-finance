@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router'
 import type { AlertState } from '@/domain/types'
 import { useStore } from '@/data/store'
 import { useAlerts, useOverview, type AlertWithState } from '@/data/useFinance'
-import { buildLocalCashAnalysis, reviewAnalysis } from '@/domain/ai/analysis'
+import { buildLocalCashAnalysis, reviewAnalysis, type AgentKind } from '@/domain/ai/analysis'
+import type { AiAnalysisResponse } from '@/data/repository'
 import { Button, ButtonLink, EmptyState, Money, Notice, PageHeader, Panel, Segmented, SeverityTag, Tag, cx, severityBar } from '@/components/ui'
 import { useToast } from '@/components/overlay'
 import { Icon } from '@/components/icons'
@@ -207,8 +208,13 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-/** Área das análises sob demanda (Fase 5). Sem provedor, mostra só o exemplo local identificado. */
+/** Área das análises sob demanda. No modo demo só existe o exemplo local identificado. */
 function AnalysisPanel() {
+  const { repo } = useStore()
+  return repo.mode === 'demo' ? <LocalAnalysisExample /> : <ServerAnalysisPanel />
+}
+
+function LocalAnalysisExample() {
   const o = useOverview()
   const { alerts } = useAlerts()
   const [show, setShow] = useState(false)
@@ -256,27 +262,132 @@ function AnalysisPanel() {
                 <li key={x}>{x}</li>
               ))}
             </Section>
-            <div
-              className={cx(
-                'mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
-                result.review.valid ? 'border-pos/25 text-pos' : 'border-risk/30 text-risk',
-              )}
-            >
-              <Icon name={result.review.valid ? 'check' : 'alert'} size={14} className="mt-px shrink-0" />
-              <span>
-                Revisor de análises:{' '}
-                {result.review.valid
-                  ? 'todas as afirmações têm evidência e os valores conferem com os cálculos.'
-                  : `análise reprovada — ${result.review.issues.join('; ')}. Não use como referência.`}
-              </span>
-            </div>
-            <p className="mt-2 text-2xs text-ink-3">
-              Período: {formatDateBR(result.analysis.period.start)} – {formatDateBR(result.analysis.period.end)}
-            </p>
+            <ReviewBox review={result.review} />
+            <PeriodLine period={result.analysis.period} />
           </div>
         )
       )}
     </Panel>
+  )
+}
+
+const AGENT_OPTIONS: { value: AgentKind; label: string }[] = [
+  { value: 'cash', label: 'Caixa' },
+  { value: 'expenses', label: 'Despesas' },
+  { value: 'scenarios', label: 'Cenários' },
+]
+
+function ServerAnalysisPanel() {
+  const { repo } = useStore()
+  const [agent, setAgent] = useState<AgentKind>('cash')
+  const [result, setResult] = useState<AiAnalysisResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const generate = async () => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      setResult(await repo.requestAnalysis(agent))
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Não foi possível gerar a análise.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Panel eyebrow="Análises sob demanda" title="Agente de análise">
+      <Notice tone="accent" title="Gerado no servidor, revisado automaticamente">
+        A análise usa apenas dados agregados da empresa, roda no servidor com o seu acesso e passa por um revisor antes de ser exibida. É uma estimativa, não
+        uma garantia de resultado.
+      </Notice>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div>
+          <p className="eyebrow mb-1">Agente</p>
+          <Segmented
+            label="Agente de análise"
+            size="sm"
+            value={agent}
+            options={AGENT_OPTIONS}
+            onChange={(value) => {
+              setAgent(value)
+              setResult(null)
+              setError(null)
+            }}
+          />
+        </div>
+        <Button size="sm" loading={loading} onClick={generate}>
+          Gerar análise
+        </Button>
+      </div>
+      {error && (
+        <Notice tone="risk" className="mt-4">
+          {error}
+        </Notice>
+      )}
+      {result && <AnalysisResultView result={result} />}
+    </Panel>
+  )
+}
+
+function AnalysisResultView({ result }: { result: AiAnalysisResponse }) {
+  const { analysis, review, cached } = result
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {review.valid ? <Tag tone="accent">Gerado por IA, revisado automaticamente</Tag> : <Tag tone="risk">Gerada por IA — reprovada pelo revisor</Tag>}
+        {cached && <Tag>Do cache</Tag>}
+      </div>
+      <p className="text-sm leading-relaxed text-ink">{analysis.summary}</p>
+      <Section title="Evidências">
+        {analysis.evidence.map((e) => (
+          <li key={`${e.factKey}:${e.claim}`}>{e.claim}</li>
+        ))}
+      </Section>
+      <Section title="Premissas">
+        {analysis.assumptions.map((x) => (
+          <li key={x}>{x}</li>
+        ))}
+      </Section>
+      <Section title="Limitações">
+        {analysis.limitations.map((x) => (
+          <li key={x}>{x}</li>
+        ))}
+      </Section>
+      <Section title="Ações sugeridas">
+        {analysis.suggestedActions.map((x) => (
+          <li key={x}>{x}</li>
+        ))}
+      </Section>
+      <ReviewBox review={review} />
+      <PeriodLine period={analysis.period} />
+    </div>
+  )
+}
+
+function ReviewBox({ review }: { review: AiAnalysisResponse['review'] }) {
+  return (
+    <div
+      className={cx('mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-xs', review.valid ? 'border-pos/25 text-pos' : 'border-risk/30 text-risk')}
+    >
+      <Icon name={review.valid ? 'check' : 'alert'} size={14} className="mt-px shrink-0" />
+      <span>
+        Revisor de análises:{' '}
+        {review.valid
+          ? 'todas as afirmações têm evidência e os valores conferem com os cálculos.'
+          : `análise reprovada — ${review.issues.join('; ')}. Não use como referência.`}
+      </span>
+    </div>
+  )
+}
+
+function PeriodLine({ period }: { period: AiAnalysisResponse['analysis']['period'] }) {
+  return (
+    <p className="mt-2 text-2xs text-ink-3">
+      Período: {period.start && period.end ? `${formatDateBR(period.start)} – ${formatDateBR(period.end)}` : 'não informado'}
+    </p>
   )
 }
 

@@ -17,6 +17,7 @@ import type { Decision } from '@/domain/finance/simulation'
 import type { ScenarioAssumptions } from '@/domain/finance/projection'
 import type { Cents } from '@/lib/money'
 import type { ISODate } from '@/lib/dates'
+import type { AgentKind, AnalysisResult, Facts, Review } from '@/domain/ai/analysis'
 
 /**
  * Contrato de acesso a dados. A interface não sabe se os dados vêm do modo de demonstração
@@ -82,6 +83,16 @@ export interface BaseProjection {
   }
 }
 
+export interface AiAnalysisResponse {
+  analysis: AnalysisResult
+  facts: Facts
+  review: Review
+  status: 'ok' | 'rejected'
+  cached: boolean
+  provider?: string
+  model?: string
+}
+
 export interface CompanySnapshot {
   company: Company
   accounts: Account[]
@@ -125,6 +136,8 @@ export interface FinanceRepository {
   getMonthlyEvolution(asOf: ISODate, months?: number): Promise<MonthPoint[]>
   /** Projeção-base (projection.projectCashflow com BASE_SCENARIO), sem eventos detalhados. */
   getBaseProjection(asOf: ISODate, horizonDays: number): Promise<BaseProjection>
+  /** Análise por agente. No demo é local; no Supabase é gerada na Edge Function. */
+  requestAnalysis(agent: AgentKind): Promise<AiAnalysisResponse>
 }
 
 export class RepositoryError extends Error {}

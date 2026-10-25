@@ -23,6 +23,7 @@ Pasta `supabase/migrations/`:
 4. `20261025000100_company_settings_edit.sql` — edição de nome e saldo de abertura com auditoria.
 5. `20261025000200_member_invites.sql` — convites de membros.
 6. `20261025000300_aggregates_and_rate_limit.sql` — `rate_limits` (função genérica interna + `rate_limit_import`/`rate_limit_import_validation`), importação com limite e funções de agregados (`company_balances`, `monthly_evolution`, `base_projection`).
+7. `20261025000400_ai_analyses.sql` — `ai_analyses` (leitura para membros, escrita só do `service_role`), `rate_limit_ai`, `ai_quota_reserve` e `category_totals`.
 
 **Opção A — SQL Editor:** cole e execute cada arquivo, na ordem.
 **Opção B — CLI:**
@@ -65,7 +66,7 @@ npm run test:db
 ```
 
 Verificações de isolamento: um usuário não lê, altera, exclui, insere, importa nem se adiciona em outra empresa; o papel somente leitura não escreve; a chave anon sozinha não lê nada; e as regras de integridade (valor, datas, categoria × tipo, transferências, idempotência de importação, auditoria) são aplicadas pelo banco.
-Em `supabase/tests/aggregates_and_rate_limit.test.ts`, a paridade centavo a centavo entre SQL e domínio (`company_balances`, `monthly_evolution`, `base_projection`) e o bloqueio `54000` após 10 importações por usuário também são verificados. Sem as chaves de teste, as duas suítes de banco são puladas.
+Em `supabase/tests/aggregates_and_rate_limit.test.ts`, a paridade centavo a centavo entre SQL e domínio (`company_balances`, `monthly_evolution`, `base_projection`) e o bloqueio `54000` após 10 importações por usuário também são verificados. Em `supabase/tests/ai.test.ts`, verificam-se a RLS de `ai_analyses` (membro lê, cliente não escreve), a cota mensal e os totais por categoria sem dados individuais. Sem as chaves de teste, as suítes de banco são puladas.
 
 Depois: `npm run dev`, crie uma conta em `/cadastro` e confira que a visão geral abre vazia, com a empresa real (sem a faixa de demonstração).
 
@@ -87,6 +88,29 @@ Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets s
 Limites aplicados no servidor: 30 validações por 10 minutos (`import_validate`, na Edge Function), 10 importações por 10 minutos (`import_transactions`, no banco) e o limite de linhas do plano. Como o limite da importação vive na RPC, chamadas diretas ao PostgREST também são bloqueadas.
 
 **As telas continuam calculando saldos, evolução e projeção no navegador** com o mesmo domínio TypeScript. Os métodos `getAccountBalances`, `getMonthlyEvolution` e `getBaseProjection` já existem no contrato e usam as RPCs no Supabase, mas só devem substituir os cálculos locais depois que a paridade for comprovada no banco de testes.
+
+## 7. Edge Function de análise por IA (Fase 5)
+
+As análises são geradas no servidor pela função `ai-analysis`, com dados agregados (saldo, evolução, projeção, totais por categoria e resumo dos cenários). Nenhum lançamento individual, descrição ou contraparte é enviado ao provedor. A resposta passa pelo revisor automático; só análises aprovadas entram no cache.
+
+Deploy:
+
+```bash
+npx --yes supabase@2.48.3 functions deploy ai-analysis
+```
+
+Variáveis (Edge Functions → Secrets ou `supabase secrets set`):
+
+| Variável         | Obrigatória  | Observação                                                                            |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------- |
+| `ALLOWED_ORIGIN` | sim          | Origem exata do app, sem `*` (ex.: `https://SEU-SITE.netlify.app`).                   |
+| `AI_PROVIDER`    | não          | `none` (padrão), `gemini` ou `fake`. Sem provedor válido a função responde 503.       |
+| `AI_MODEL`       | com `gemini` | Modelo exato, sem valor padrão que gere custo (ex.: `gemini-2.0-flash`).              |
+| `AI_API_KEY`     | com `gemini` | Segredo preenchido por você no painel; vai no header `x-goog-api-key` e nunca na URL. |
+
+A cota mensal vem de `plan_limits.ai_monthly_analyses`. O plano **trial é 0**: mesmo com o provedor configurado, nenhuma análise é chamada até a cota ser aumentada conscientemente no banco. `ai_quota_reserve` reserva a vaga na mesma transação da checagem e conta todas as chamadas ao provedor no mês (pendentes, aprovadas, reprovadas pelo revisor e erros); acertos de cache não contam. O limite por usuário é de 10 chamadas a cada 10 minutos (`rate_limit_ai`).
+
+A Edge Function usa a chave `service_role` **somente** no insert final em `ai_analyses`, depois de confirmar com o JWT do usuário que ele é membro da empresa. Ela nunca registra prompt, resposta, fatos, JWT ou chave — apenas `{ agent, provider, durationMs, status }` em caso de erro. O timeout do provedor é de 15 s e a resposta é validada por `src/domain/ai/parse.ts`.
 
 ## Backups e recuperação
 
