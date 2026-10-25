@@ -95,19 +95,6 @@ Deno.serve(async (req) => {
     return json({ error: 'Requisição inválida.' }, 400, allowedOrigin, origin)
   }
 
-  const providerName = (Deno.env.get('AI_PROVIDER') ?? 'none').trim().toLowerCase()
-  const apiKey = Deno.env.get('AI_API_KEY')
-  const model = Deno.env.get('AI_MODEL')
-  if (providerName !== 'gemini' && providerName !== 'fake') {
-    return json({ error: 'IA não configurada neste ambiente.' }, 503, allowedOrigin, origin)
-  }
-  let provider: AiProvider
-  try {
-    provider = createProvider({ provider: providerName, apiKey, model })
-  } catch {
-    return json({ error: 'IA não configurada neste ambiente.' }, 503, allowedOrigin, origin)
-  }
-
   const url = Deno.env.get('SUPABASE_URL')
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -122,6 +109,20 @@ Deno.serve(async (req) => {
 
   const { data: userData, error: userError } = await sb.auth.getUser(token)
   if (userError || !userData.user) return json({ error: 'Não autorizado.' }, 401, allowedOrigin, origin)
+
+  // O estado da configuração só é revelado a quem está autenticado.
+  const providerName = (Deno.env.get('AI_PROVIDER') ?? 'none').trim().toLowerCase()
+  const apiKey = Deno.env.get('AI_API_KEY')
+  const model = Deno.env.get('AI_MODEL')
+  if (providerName !== 'gemini' && providerName !== 'fake') {
+    return json({ error: 'IA não configurada neste ambiente.' }, 503, allowedOrigin, origin)
+  }
+  let provider: AiProvider
+  try {
+    provider = createProvider({ provider: providerName, apiKey, model })
+  } catch {
+    return json({ error: 'IA não configurada neste ambiente.' }, 503, allowedOrigin, origin)
+  }
 
   const { error: rateError } = await sb.rpc('rate_limit_ai')
   if (rateError) {

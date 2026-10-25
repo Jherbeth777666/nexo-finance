@@ -87,7 +87,7 @@ A função exige a variável `ALLOWED_ORIGIN` com a origem exata do app (sem `*`
 - produção: `ALLOWED_ORIGIN=https://SEU-SITE.netlify.app`
 - desenvolvimento: `ALLOWED_ORIGIN=http://localhost:5173`
 
-Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets set ALLOWED_ORIGIN=...`). Para rodar localmente: `supabase functions serve import-transactions --env-file .env.local`, com `ALLOWED_ORIGIN` e as variáveis do Supabase no arquivo local.
+Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets set ALLOWED_ORIGIN=...`). Para rodar localmente, gere antes o pacote (`npm run functions:build`; o `index.ts` não vem no clone) e depois: `supabase functions serve import-transactions --env-file .env.local`, com `ALLOWED_ORIGIN` e as variáveis do Supabase no arquivo local.
 
 Limites aplicados no servidor: 30 validações por 10 minutos (`import_validate`, na Edge Function), 10 importações por 10 minutos (`import_transactions`, no banco) e o limite de linhas do plano. Como o limite da importação vive na RPC, chamadas diretas ao PostgREST também são bloqueadas.
 

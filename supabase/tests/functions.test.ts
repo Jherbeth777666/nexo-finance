@@ -25,9 +25,16 @@ let expenseCategory = ''
 
 /** Corpo de erro de uma resposta não 2xx do functions.invoke. */
 async function errorBody(error: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
-  const response = (error as { context?: Response }).context
-  if (!response) throw error
-  return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+  if (!error || typeof error !== 'object') throw new Error('Esperava um erro HTTP da função, mas a chamada não falhou.')
+  const response = (error as { context?: unknown }).context
+  if (!(response instanceof Response)) throw error
+  const text = await response.text()
+  try {
+    return { status: response.status, body: text ? (JSON.parse(text) as Record<string, unknown>) : {} }
+  } catch {
+    // O gateway pode responder texto puro (ex.: 401 antes de chegar à função).
+    return { status: response.status, body: { raw: text } }
+  }
 }
 
 const row = (over: Record<string, unknown> = {}) => ({
@@ -99,6 +106,12 @@ describe.skipIf(!configured)('Edge Functions publicadas', () => {
   it('import-transactions exige usuário autenticado', async () => {
     const anon = createClient(URL!, ANON!, opts)
     const { error } = await anon.functions.invoke('import-transactions', { body: body([row()]) })
+    expect([401, 403]).toContain((await errorBody(error)).status)
+  })
+
+  it('ai-analysis exige usuário autenticado', async () => {
+    const anon = createClient(URL!, ANON!, opts)
+    const { error } = await anon.functions.invoke('ai-analysis', { body: { companyId: company, agent: 'cash' } })
     expect([401, 403]).toContain((await errorBody(error)).status)
   })
 
