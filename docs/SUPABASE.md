@@ -20,6 +20,9 @@ Pasta `supabase/migrations/`:
 1. `20261024000100_core_schema.sql` — tabelas, tipos, FKs compostas por empresa, constraints, índices.
 2. `20261024000200_rules_and_triggers.sql` — validação no servidor, auditoria por gatilho, `create_company`, `import_transactions`.
 3. `20261024000300_rls.sql` — RLS em todas as tabelas e revogações.
+4. `20261025000100_company_settings_edit.sql` — edição de nome e saldo de abertura com auditoria.
+5. `20261025000200_member_invites.sql` — convites de membros.
+6. `20261025000300_aggregates_and_rate_limit.sql` — `rate_limits` (função genérica interna + `rate_limit_import`/`rate_limit_import_validation`), importação com limite e funções de agregados (`company_balances`, `monthly_evolution`, `base_projection`).
 
 **Opção A — SQL Editor:** cole e execute cada arquivo, na ordem.
 **Opção B — CLI:**
@@ -61,9 +64,29 @@ A chave `service_role` ignora o RLS. Ela fica só nesse arquivo local (ignorado 
 npm run test:db
 ```
 
-27 verificações: um usuário não lê, altera, exclui, insere, importa nem se adiciona em outra empresa; o papel somente leitura não escreve; a chave anon sozinha não lê nada; e as regras de integridade (valor, datas, categoria × tipo, transferências, idempotência de importação, auditoria) são aplicadas pelo banco.
+Verificações de isolamento: um usuário não lê, altera, exclui, insere, importa nem se adiciona em outra empresa; o papel somente leitura não escreve; a chave anon sozinha não lê nada; e as regras de integridade (valor, datas, categoria × tipo, transferências, idempotência de importação, auditoria) são aplicadas pelo banco.
+Em `supabase/tests/aggregates_and_rate_limit.test.ts`, a paridade centavo a centavo entre SQL e domínio (`company_balances`, `monthly_evolution`, `base_projection`) e o bloqueio `54000` após 10 importações por usuário também são verificados. Sem as chaves de teste, as duas suítes de banco são puladas.
 
 Depois: `npm run dev`, crie uma conta em `/cadastro` e confira que a visão geral abre vazia, com a empresa real (sem a faixa de demonstração).
+
+## 6. Edge Function de importação (Fase 4)
+
+A importação de planilhas valida o lote no servidor e chama `import_transactions` com o JWT do usuário:
+
+```bash
+npx --yes supabase@2.48.3 functions deploy import-transactions
+```
+
+A função exige a variável `ALLOWED_ORIGIN` com a origem exata do app (sem `*`), por exemplo:
+
+- produção: `ALLOWED_ORIGIN=https://SEU-SITE.netlify.app`
+- desenvolvimento: `ALLOWED_ORIGIN=http://localhost:5173`
+
+Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets set ALLOWED_ORIGIN=...`). Para rodar localmente: `supabase functions serve import-transactions --env-file .env.local`, com `ALLOWED_ORIGIN` e as variáveis do Supabase no arquivo local.
+
+Limites aplicados no servidor: 30 validações por 10 minutos (`import_validate`, na Edge Function), 10 importações por 10 minutos (`import_transactions`, no banco) e o limite de linhas do plano. Como o limite da importação vive na RPC, chamadas diretas ao PostgREST também são bloqueadas.
+
+**As telas continuam calculando saldos, evolução e projeção no navegador** com o mesmo domínio TypeScript. Os métodos `getAccountBalances`, `getMonthlyEvolution` e `getBaseProjection` já existem no contrato e usam as RPCs no Supabase, mas só devem substituir os cálculos locais depois que a paridade for comprovada no banco de testes.
 
 ## Backups e recuperação
 

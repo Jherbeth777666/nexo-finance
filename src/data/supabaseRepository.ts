@@ -1,12 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, MemberRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG, type AlertConfig } from '@/domain/finance/alerts'
+import type { AccountBalance, MonthPoint } from '@/domain/finance/metrics'
 import { CONSERVATIVE_SCENARIO, type ScenarioAssumptions } from '@/domain/finance/projection'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import type { ValidTransaction } from '@/domain/transactions'
-import { todayIn } from '@/lib/dates'
+import { addDays, todayIn } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
-import { RepositoryError, type CompanySnapshot, type CreateInviteInput, type FinanceRepository, type ImportRecord, type SavedScenario } from './repository'
+import {
+  RepositoryError,
+  type BaseProjection,
+  type CompanySnapshot,
+  type CreateInviteInput,
+  type FinanceRepository,
+  type ImportRecord,
+  type SavedScenario,
+} from './repository'
 import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
 
 /**
@@ -219,34 +228,89 @@ export class SupabaseRepository implements FinanceRepository {
   }
 
   async importTransactions(rows: ValidTransaction[], meta: Omit<ImportRecord, 'id' | 'at' | 'actor'>): Promise<ImportRecord> {
-    const payload = rows.map((r) => ({
-      kind: r.kind,
-      status: r.status,
-      description: r.description,
-      counterparty: r.counterparty ?? null,
-      category_id: r.categoryId,
-      account_id: r.accountId,
-      amount: centsToNumeric(r.amount),
-      competence_date: r.competenceDate,
-      due_date: r.dueDate,
-      settled_date: r.settledDate,
-      notes: r.notes ?? null,
-      source_ref: r.sourceRef ?? null,
-    }))
-    const importId = check(
-      await this.sb.rpc('import_transactions', {
-        p_company: this.companyId,
-        p_file_name: meta.fileName,
-        p_file_hash: meta.fileHash,
-        p_rows: payload,
-        p_stats: { total_rows: meta.totalRows, skipped: meta.skipped, errors: meta.errors, warnings: meta.warnings },
-      }),
-    ) as string
+    // A validação autoritativa e o limite de requisições ficam na Edge Function. Enviamos os
+    // centavos como inteiros: a função converte para NUMERIC(14,2) sem float.
+    const { data, error } = await this.sb.functions.invoke('import-transactions', {
+      body: {
+        companyId: this.companyId,
+        fileName: meta.fileName,
+        fileHash: meta.fileHash,
+        stats: { totalRows: meta.totalRows, skipped: meta.skipped, errors: meta.errors, warnings: meta.warnings },
+        rows,
+      },
+    })
+    if (error) throw new RepositoryError(await functionsErrorMessage(error))
+    const importId = (data as { importId?: unknown } | null)?.importId
+    if (typeof importId !== 'string' || !importId) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
     // Recarrega tudo: a importação pode trazer milhares de linhas criadas no servidor.
     this.cache = await this.fetchAll()
     const rec = this.cache.imports.find((i) => i.id === importId)
     if (!rec) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
     return rec
+  }
+
+  async getAccountBalances(asOf: string): Promise<AccountBalance[]> {
+    const [s, rows] = await Promise.all([this.state(), this.sb.rpc('company_balances', { p_company: this.companyId, p_as_of: asOf })])
+    const balances = check(rows) as { account_id: string; balance: string | number; settled_count: number }[]
+    const byAccount = new Map(balances.map((b) => [b.account_id, b]))
+    return s.accounts
+      .filter((a) => byAccount.has(a.id))
+      .map((account) => {
+        const b = byAccount.get(account.id)!
+        return { account: structuredClone(account), balance: numericToCents(b.balance), settledCount: b.settled_count }
+      })
+  }
+
+  async getMonthlyEvolution(asOf: string, months = 6): Promise<MonthPoint[]> {
+    const rows = check(await this.sb.rpc('monthly_evolution', { p_company: this.companyId, p_as_of: asOf, p_months: months })) as {
+      month: string
+      cash_in: string | number
+      cash_out: string | number
+      net: string | number
+      end_balance: string | number
+    }[]
+    return rows.map((r) => ({
+      month: r.month,
+      cashIn: numericToCents(r.cash_in),
+      cashOut: numericToCents(r.cash_out),
+      net: numericToCents(r.net),
+      endBalance: numericToCents(r.end_balance),
+    }))
+  }
+
+  async getBaseProjection(asOf: string, horizonDays: number): Promise<BaseProjection> {
+    const rows = check(await this.sb.rpc('base_projection', { p_company: this.companyId, p_as_of: asOf, p_days: horizonDays })) as BaseProjectionRow[]
+    const first = rows[0]
+    if (!first) throw new RepositoryError('Empresa não encontrada ou sem acesso.')
+    const day = (r: BaseProjectionRow) => ({
+      date: r.day,
+      inflow: numericToCents(r.inflow),
+      outflow: numericToCents(r.outflow),
+      balance: numericToCents(r.balance),
+    })
+    return {
+      asOf,
+      endDate: addDays(asOf, horizonDays - 1),
+      horizonDays,
+      startBalance: numericToCents(first.start_balance),
+      endBalance: numericToCents(first.end_balance),
+      totalIn: numericToCents(first.total_in),
+      totalOut: numericToCents(first.total_out),
+      minBalance: numericToCents(first.min_balance),
+      minDate: first.min_date,
+      firstNegativeDate: first.first_negative_date,
+      negativeDays: first.negative_days,
+      lastInflowDate: first.last_inflow_date,
+      days: rows.map(day),
+      pressureDays: rows
+        .filter((r) => r.pressure_rank !== null)
+        .sort((a, b) => (a.pressure_rank ?? 0) - (b.pressure_rank ?? 0))
+        .map(day),
+      excluded: {
+        overdueReceivables: { amount: numericToCents(first.overdue_receivables_amount), count: first.overdue_receivables_count },
+        beyondHorizon: { amount: numericToCents(first.beyond_horizon_amount), count: first.beyond_horizon_count },
+      },
+    }
   }
 
   async setAlertState(fingerprint: string, state: AlertState, note?: string) {
@@ -456,6 +520,48 @@ export class SupabaseRepository implements FinanceRepository {
   async reset(): Promise<CompanySnapshot> {
     throw new RepositoryError('Reinicializar está disponível apenas no modo de demonstração.')
   }
+}
+
+interface BaseProjectionRow {
+  day: string
+  inflow: string | number
+  outflow: string | number
+  balance: string | number
+  pressure_rank: number | null
+  start_balance: string | number
+  end_balance: string | number
+  total_in: string | number
+  total_out: string | number
+  min_balance: string | number
+  min_date: string
+  first_negative_date: string | null
+  negative_days: number
+  last_inflow_date: string | null
+  overdue_receivables_amount: string | number
+  overdue_receivables_count: number
+  beyond_horizon_amount: string | number
+  beyond_horizon_count: number
+}
+
+/** Mensagem da Edge Function sem expor detalhes internos; erros de linha vêm da validação pura. */
+async function functionsErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context
+  if (context && typeof context === 'object' && typeof (context as Response).json === 'function') {
+    try {
+      const body = (await (context as Response).json()) as { error?: unknown; errors?: { line?: unknown; message?: unknown }[] }
+      if (Array.isArray(body.errors) && body.errors.length) {
+        const lines = body.errors
+          .filter((e) => e && typeof e.message === 'string')
+          .slice(0, 10)
+          .map((e) => `Linha ${typeof e.line === 'number' ? e.line : '?'}: ${e.message}`)
+        if (lines.length) return lines.join(' ')
+      }
+      if (typeof body.error === 'string' && body.error.length <= 200) return body.error
+    } catch {
+      // Corpo indisponível: usa a mensagem genérica.
+    }
+  }
+  return 'Não foi possível concluir a importação. Tente novamente.'
 }
 
 interface InviteRow {

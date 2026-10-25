@@ -1,12 +1,13 @@
 import type { Account, AlertState, AuditEntry, Company, CompanyInvite, CompanyMember, InviteRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG } from '@/domain/finance/alerts'
-import { CONSERVATIVE_SCENARIO } from '@/domain/finance/projection'
+import { accountBalances, monthlyEvolution } from '@/domain/finance/metrics'
+import { BASE_SCENARIO, CONSERVATIVE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
 import type { ValidTransaction } from '@/domain/transactions'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import { addDays, todayIn } from '@/lib/dates'
 import { assertCents, formatBRL, type Cents } from '@/lib/money'
 import { buildDemoDataset } from './demo/seed'
-import { RepositoryError, type CompanySnapshot, type CreateInviteInput, type FinanceRepository } from './repository'
+import { RepositoryError, type BaseProjection, type CompanySnapshot, type CreateInviteInput, type FinanceRepository } from './repository'
 
 /**
  * Repositório do modo de demonstração. Os dados ficam SOMENTE no navegador do visitante,
@@ -311,6 +312,42 @@ export class DemoRepository implements FinanceRepository {
     s.members = s.members.filter((m) => m.userId !== userId)
     this.audit({ action: 'delete', entity: 'member', entityId: userId, summary: `Removeu ${member.name} da equipe` })
     this.write()
+  }
+
+  async getAccountBalances(asOf: string) {
+    const s = this.read()
+    return structuredClone(accountBalances(s.accounts, s.transactions, asOf))
+  }
+
+  async getMonthlyEvolution(asOf: string, months = 6) {
+    const s = this.read()
+    return structuredClone(monthlyEvolution(s.accounts, s.transactions, asOf, months))
+  }
+
+  async getBaseProjection(asOf: string, horizonDays: number): Promise<BaseProjection> {
+    const s = this.read()
+    const p = projectCashflow({ accounts: s.accounts, transactions: s.transactions, asOf, horizonDays, assumptions: BASE_SCENARIO })
+    const day = ({ date, inflow, outflow, balance }: (typeof p.days)[number]) => ({ date, inflow, outflow, balance })
+    return {
+      asOf: p.asOf,
+      endDate: p.endDate,
+      horizonDays: p.horizonDays,
+      startBalance: p.startBalance,
+      endBalance: p.endBalance,
+      totalIn: p.totalIn,
+      totalOut: p.totalOut,
+      minBalance: p.minBalance,
+      minDate: p.minDate,
+      firstNegativeDate: p.firstNegativeDate,
+      negativeDays: p.negativeDays,
+      lastInflowDate: p.lastInflowDate,
+      days: p.days.map(day),
+      pressureDays: p.pressureDays.map(day),
+      excluded: {
+        overdueReceivables: p.excluded.overdueReceivables,
+        beyondHorizon: p.excluded.beyondHorizon,
+      },
+    }
   }
 
   async reset(): Promise<CompanySnapshot> {

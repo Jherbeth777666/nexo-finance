@@ -61,7 +61,7 @@ export type ValidTransaction = Omit<Transaction, 'id' | 'createdAt' | 'updatedAt
 
 export function validateTransaction(
   input: TransactionInput,
-  ctx: { categories: Category[]; accounts: Account[]; today: ISODate },
+  ctx: { categories: Category[]; accounts: Pick<Account, 'id'>[]; today: ISODate },
 ): { ok: true; value: ValidTransaction } | { ok: false; errors: TransactionErrors } {
   const errors: TransactionErrors = {}
   const description = input.description.trim()

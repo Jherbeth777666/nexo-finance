@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 
 /**
@@ -5,6 +6,9 @@ import { defineConfig, loadEnv } from 'vite'
  * do banco). Lê credenciais de .env.test.local — nunca commitado. Rode com `npm run test:db`.
  */
 export default defineConfig(({ mode }) => ({
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   test: {
     include: ['supabase/tests/**/*.test.ts'],
     globals: true,
