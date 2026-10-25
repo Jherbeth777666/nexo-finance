@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  # O gitleaks-action lista os commits do PR em eventos pull_request (só leitura).
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
