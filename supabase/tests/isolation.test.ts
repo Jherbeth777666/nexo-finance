@@ -228,10 +228,11 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
     it('renomeia a empresa e altera o saldo de abertura, com registro de ações', async () => {
       const co = await A.sb
         .from('companies')
-        .update({ name: `Empresa A ${run}` })
+        .update({ name: `Empresa A renomeada ${run}` })
         .eq('id', companyA)
         .select('name')
-      expect(co.data).toEqual([{ name: `Empresa A ${run}` }])
+      // O nome precisa mudar de verdade: o gatilho só audita quando old.name difere de new.name.
+      expect(co.data).toEqual([{ name: `Empresa A renomeada ${run}` }])
       const acc = await A.sb.from('accounts').update({ opening_balance: '1234.56' }).eq('id', accountA).select('opening_balance')
       expect(Number(acc.data![0].opening_balance)).toBe(1234.56)
       const logs = await A.sb.from('audit_logs').select('entity').eq('company_id', companyA).eq('action', 'update').in('entity', ['company', 'account'])

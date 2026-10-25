@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { todayIn } from '@/lib/dates'
+import { numericToCents } from '@/data/supabaseMapping'
 
 /**
  * Fase 5 no banco: RLS de ai_analyses (membro lê, ninguém escreve pelo cliente), cota mensal,
@@ -161,6 +162,12 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
     if (cats.error) throw cats.error
     const expense = cats.data.find((c) => c.kind === 'expense')!
     const income = cats.data.find((c) => c.kind === 'income')!
+    const secondAccount = await owner
+      .from('accounts')
+      .insert({ company_id: company, name: `Reserva ${run}`, opening_date: today })
+      .select('id')
+      .single()
+    if (secondAccount.error) throw secondAccount.error
 
     const rows = [
       {
@@ -172,6 +179,7 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
         amount: '100.00',
         competence_date: today,
         due_date: today,
+        settled_date: today,
       },
       {
         kind: 'expense',
@@ -202,6 +210,7 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
         amount: '777.00',
         competence_date: '2020-01-01',
         due_date: '2020-01-01',
+        settled_date: '2020-01-01',
       },
       {
         kind: 'income',
@@ -212,16 +221,19 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
         amount: '30.00',
         competence_date: today,
         due_date: today,
+        settled_date: today,
       },
       {
+        // Transferência válida (sem categoria, com destino): nunca entra nos totais por categoria.
         kind: 'transfer',
         status: 'settled',
         description: 'Transferência',
         account_id: account,
-        category_id: expense.id,
+        to_account_id: secondAccount.data.id,
         amount: '500.00',
         competence_date: today,
         due_date: today,
+        settled_date: today,
       },
     ]
     const inserted = await owner.from('transactions').insert(rows.map((r) => ({ company_id: company, ...r })))
@@ -230,10 +242,11 @@ describe.skipIf(!configured)('análises de IA: RLS, cota, limite e totais por ca
     const { data, error } = await owner.rpc('category_totals', { p_company: company, p_as_of: today, p_days: 90 })
     if (error) throw error
 
-    const result = data as { name: string; kind: string; total: string }[]
-    expect(result).toEqual([
-      { name: expense.name, kind: 'expense', total: '150.00' },
-      { name: income.name, kind: 'income', total: '30.00' },
+    // O PostgREST devolve numeric como número JSON: compare em centavos, como o app faz.
+    const result = data as { name: string; kind: string; total: string | number }[]
+    expect(result.map((r) => ({ ...r, total: numericToCents(r.total) }))).toEqual([
+      { name: expense.name, kind: 'expense', total: 15000 },
+      { name: income.name, kind: 'income', total: 3000 },
     ])
     expect(Object.keys(result[0]).sort()).toEqual(['kind', 'name', 'total'])
 
