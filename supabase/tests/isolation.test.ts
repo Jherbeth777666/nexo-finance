@@ -212,6 +212,29 @@ describe.skipIf(!configured)('isolamento entre empresas (RLS) e regras do banco'
       const r = await C.sb.from('company_members').update({ role: 'admin' }).eq('company_id', companyA).eq('user_id', C.id).select('role')
       expect(r.data ?? []).toEqual([])
     })
+    it('não renomeia a empresa nem altera saldo de abertura', async () => {
+      const co = await C.sb.from('companies').update({ name: 'Pelo viewer' }).eq('id', companyA).select('id')
+      expect(co.data ?? []).toEqual([])
+      const acc = await C.sb.from('accounts').update({ opening_balance: '1.00' }).eq('id', accountA).select('id')
+      expect(acc.data ?? []).toEqual([])
+    })
+  })
+
+  describe('dados da empresa (usuário A, owner)', () => {
+    it('renomeia a empresa e altera o saldo de abertura, com registro de ações', async () => {
+      const co = await A.sb.from('companies').update({ name: `Empresa A ${run}` }).eq('id', companyA).select('name')
+      expect(co.data).toEqual([{ name: `Empresa A ${run}` }])
+      const acc = await A.sb.from('accounts').update({ opening_balance: '1234.56' }).eq('id', accountA).select('opening_balance')
+      expect(Number(acc.data![0].opening_balance)).toBe(1234.56)
+      const logs = await A.sb.from('audit_logs').select('entity').eq('company_id', companyA).eq('action', 'update').in('entity', ['company', 'account'])
+      expect(new Set(logs.data!.map((l) => l.entity))).toEqual(new Set(['company', 'account']))
+    })
+    it('não altera o plano nem colunas fora das permitidas', async () => {
+      const plan = await A.sb.from('companies').update({ plan: 'trial' }).eq('id', companyA)
+      expect(plan.error?.code).toBe('42501')
+      const owner = await A.sb.from('companies').update({ created_by: B.id }).eq('id', companyA)
+      expect(owner.error?.code).toBe('42501')
+    })
   })
 
   describe('regras de integridade no servidor (usuário A)', () => {
