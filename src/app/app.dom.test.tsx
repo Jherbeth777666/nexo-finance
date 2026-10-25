@@ -113,7 +113,7 @@ describe('formulários', () => {
       password: expect.any(String),
       confirm: 'As senhas não coincidem',
     })
-    expect(validateSignup({ name: 'Ana', company: 'Loja', email: 'ana@loja.com.br', password: 'senhaforte123', confirm: 'senhaforte123' })).toEqual({})
+    expect(validateSignup({ name: 'Ana', company: 'Loja', email: 'ana@loja.com.br', password: 'senhaforte123', confirm: 'senhaforte123' })).toEqual({}) // gitleaks:allow (senha fictícia de teste)
     expect(validateLogin({ email: '', password: '' })).toMatchObject({ email: 'Informe o e-mail', password: 'Informe a senha' })
   })
 })
