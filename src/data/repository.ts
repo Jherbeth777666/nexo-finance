@@ -167,6 +167,8 @@ export interface FinanceRepository {
   requestAnalysis(agent: AgentKind): Promise<AiAnalysisResponse>
   /** Vendas por item de uma janela inclusiva; o snapshot não carrega o histórico completo. */
   listProductSales(from: ISODate, to: ISODate): Promise<ProductSale[]>
+  /** Dos identificadores de origem candidatos, devolve os que já existem (sem depender da janela). */
+  existingProductSaleRefs(sourceRefs: string[]): Promise<string[]>
   saveProduct(input: SaveProductInput): Promise<Product>
   importProductSales(rows: NewProductSale[], meta: Omit<ImportRecord, 'id' | 'at' | 'actor'>): Promise<ImportRecord>
   saveLocalEvent(input: SaveLocalEventInput): Promise<LocalEvent>

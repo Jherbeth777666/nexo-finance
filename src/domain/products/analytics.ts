@@ -126,8 +126,11 @@ export function staleProducts(products: Product[], sales: ProductSale[], asOf: I
     const recentQuantity = sumQuantities(own.filter((s) => s.saleDate >= recentStart && s.saleDate <= asOf).map((s) => s.quantity))
     const previousQuantity = sumQuantities(own.filter((s) => s.saleDate >= previousStart && s.saleDate <= previousEnd).map((s) => s.quantity))
     const daysWithoutSale = diffDays(asOf, lastSaleDate)
-    if (recentQuantity === 0 && previousQuantity > 0) {
-      out.push({ product, lastSaleDate, daysWithoutSale, recentQuantity, previousQuantity, dropPct: -100, reason: 'no_recent_sales' })
+    // Sem vendas na janela recente, considera parado mesmo que a janela anterior também esteja
+    // zerada: o produto pode ter vendido há mais de 42 dias (histórico anterior a previousStart).
+    const hasEarlierSales = own.some((s) => s.saleDate < recentStart)
+    if (recentQuantity === 0 && (previousQuantity > 0 || hasEarlierSales)) {
+      out.push({ product, lastSaleDate, daysWithoutSale, recentQuantity, previousQuantity, dropPct: 100, reason: 'no_recent_sales' })
     } else if (recentQuantity > 0 && previousQuantity > 0) {
       const drop = ((previousQuantity - recentQuantity) / previousQuantity) * 100
       if (drop >= dropThreshold) {
@@ -135,7 +138,12 @@ export function staleProducts(products: Product[], sales: ProductSale[], asOf: I
       }
     }
   }
-  return out.sort((a, b) => (b.dropPct ?? 0) - (a.dropPct ?? 0) || a.product.name.localeCompare(b.product.name))
+  return out.sort(
+    (a, b) =>
+      (a.reason === 'no_recent_sales' ? 0 : 1) - (b.reason === 'no_recent_sales' ? 0 : 1) ||
+      (b.dropPct ?? 0) - (a.dropPct ?? 0) ||
+      a.product.name.localeCompare(b.product.name),
+  )
 }
 
 export interface StockEstimate {

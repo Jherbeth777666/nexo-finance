@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { App } from '@/App'
@@ -14,7 +14,7 @@ import type { AiAnalysisResponse } from '@/data/repository'
 import { accountBalances } from '@/domain/finance/metrics'
 import type { MemberRole } from '@/domain/types'
 import { formatBRL } from '@/lib/money'
-import { todayIn } from '@/lib/dates'
+import { addDays, todayIn } from '@/lib/dates'
 import { validateLogin, validateSignup } from '@/features/auth/validation'
 import { PENDING_INVITE_KEY, readPendingInvite, savePendingInvite } from '@/features/invites/pendingInvite'
 
@@ -202,6 +202,64 @@ ${day}/${month}/${year},Café Teste,CAFT,2,"37,80"
     expect(await screen.findByText('Vendas por item importadas')).toBeTruthy()
     await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
     expect(await screen.findByText('Café Teste')).toBeTruthy()
+  })
+
+  it('produtos: ao mudar o estoque, data da contagem vira hoje e data futura é barrada', async () => {
+    const user = userEvent.setup()
+    const today = todayIn()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
+    const row = (await screen.findByText('Arroz branco 5 kg')).closest('tr')!
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog')
+    const stock = within(dialog).getByLabelText('Estoque atual')
+    await user.clear(stock)
+    await user.type(stock, '12')
+    const stockDate = within(dialog).getByLabelText('Data da contagem') as HTMLInputElement
+    expect(stockDate.value).toBe(today)
+    fireEvent.change(stockDate, { target: { value: addDays(today, 1) } })
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(await within(dialog).findByText(/não pode estar no futuro/)).toBeTruthy()
+  })
+
+  it('produtos: reconhece venda já importada mesmo fora da janela carregada', async () => {
+    const user = userEvent.setup()
+    const today = todayIn()
+    const [year, month, day] = addDays(today, -400).split('-')
+    const csv = `Data,Produto,Código,Quantidade,Valor total
+${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
+`
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+
+    const upload = async () => {
+      await user.click(screen.getByRole('button', { name: 'Importar vendas por item' }))
+      const dialog = await screen.findByRole('dialog')
+      const file = new File([csv], 'vendas-antigas.csv', { type: 'text/csv' })
+      Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(csv).buffer })
+      await user.upload(within(dialog).getByLabelText('Arquivo de vendas por item'), file)
+      expect(await within(dialog).findByText(/1 linha\(s\)/)).toBeTruthy()
+      await user.click(within(dialog).getByRole('button', { name: 'Validar planilha' }))
+      return dialog
+    }
+
+    const first = await upload()
+    expect(await within(first).findByText('1 a importar')).toBeTruthy()
+    await user.click(within(first).getByRole('button', { name: 'Importar 1 venda(s)' }))
+    expect(await screen.findByText('Vendas por item importadas')).toBeTruthy()
+
+    const second = await upload()
+    expect(await within(second).findByText('1 já importada(s)')).toBeTruthy()
+    expect(within(second).getByText('0 a importar')).toBeTruthy()
+  })
+
+  it('produtos: sazonalidade usa o histórico maior que 90 dias', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('radio', { name: 'Sazonalidade' }))
+    expect(await screen.findByText(/Com 180 dias de histórico/)).toBeTruthy()
   })
 
   it('produtos: cadastra evento local na sazonalidade', async () => {

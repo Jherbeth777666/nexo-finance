@@ -91,9 +91,18 @@ export interface ProductImportContext {
 const cellStr = (c: unknown) => (c == null ? '' : String(c).trim())
 const CANCELLED = ['cancelado', 'cancelada', 'devolucao', 'devolvido', 'devolvida', 'estorno', 'estornado', 'estornada']
 
-export function productSourceRef(sale: { productCode: string | null; productName: string; saleDate: ISODate; quantity: MilliQty; revenue: Cents }) {
+export function productSourceRef(sale: {
+  productCode: string | null
+  productName: string
+  saleDate: ISODate
+  quantity: MilliQty
+  revenue: Cents
+  externalId?: string | null
+}) {
   const key = sale.productCode ? `code:${norm(sale.productCode)}` : `name:${norm(sale.productName)}`
-  return `sale:${key}|${sale.saleDate}|${sale.quantity}|${sale.revenue}`
+  const externalKey = sale.externalId ? norm(sale.externalId) : ''
+  const external = externalKey ? `|ext:${externalKey}` : ''
+  return `sale:${key}${external}|${sale.saleDate}|${sale.quantity}|${sale.revenue}`
 }
 
 /** Nome normalizado, sem acentos/espaços duplicados, para casar produtos entre planilhas. */
@@ -123,7 +132,9 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
     const productName = cellStr(get('product'))
     const productCode = cellStr(get('code')) || null
     if (!productName) errors.push('Produto vazio')
+    else if (productName.length < 2) errors.push('Nome do produto deve ter ao menos 2 caracteres')
     if (productName.length > 120) errors.push('Nome do produto acima de 120 caracteres')
+    if (productCode && productCode.length > 40) errors.push('Código do produto acima de 40 caracteres')
 
     const qtyRaw = get('quantity')
     const quantity = qtyRaw == null || cellStr(qtyRaw) === '' ? null : parseQuantity(qtyRaw)
@@ -146,11 +157,13 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
           warnings.push(`Total difere de quantidade × valor unitário em ${formatBRL(Math.abs(expected - total))}; usando o total`)
         }
       }
+    } else if (quantity !== null && quantity <= 0) {
+      // Devolução/cancelamento: a linha será desmarcada com aviso, então não exige valor total.
     } else if (unitPrice !== null && quantity !== null && quantity > 0) {
       revenue = revenueFor(quantity, unitPrice)
     } else if (mapping.total === undefined && mapping.unitPrice === undefined) {
       errors.push('Mapeie o valor total ou o valor unitário')
-    } else if (totalRaw == null || cellStr(totalRaw) === '') {
+    } else if (unitPrice === null && (totalRaw == null || cellStr(totalRaw) === '')) {
       errors.push('Valor total vazio')
     }
 
@@ -165,6 +178,7 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
 
     const statusRaw = norm(cellStr(get('status')))
     const cancelled = CANCELLED.some((s) => statusRaw.includes(s))
+    const externalId = cellStr(get('externalId')) || null
 
     if (cancelled) warnings.push('Devolução/cancelamento ignorado')
     if (quantity !== null && quantity <= 0) warnings.push('Quantidade zero ou negativa: linha ignorada')
@@ -175,7 +189,7 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
       return { index: i + 2, raw, sale: null, errors: [], warnings, alreadyImported: false, include: false }
     }
 
-    const product = productCode ? byCode.get(norm(productCode)) : byName.get(productKey(productName))
+    const product = (productCode ? byCode.get(norm(productCode)) : undefined) ?? byName.get(productKey(productName))
     if (!product && !errors.length) warnings.push('Produto novo: será criado no catálogo')
 
     const invalidQuantity = quantity === null || quantity <= 0
@@ -201,7 +215,7 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
       revenue: revenue!,
       unitCost: unitCost !== null && unitCost >= 0 ? unitCost : null,
       stock: stock !== null && stock >= 0 ? stock : null,
-      sourceRef: productSourceRef({ productCode, productName, saleDate, quantity: quantity!, revenue: revenue! }),
+      sourceRef: productSourceRef({ productCode, productName, saleDate, quantity: quantity!, revenue: revenue!, externalId }),
     }
     const seen = seenInFile.get(sale.sourceRef)
     if (seen) {

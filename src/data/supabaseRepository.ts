@@ -61,6 +61,7 @@ import type { NewProductSale } from '@/domain/products/mapping'
  * tudo após cada operação (sem recarregar a página).
  */
 const PAGE = 1000
+const REF_BATCH = 200
 const DEFAULT_CUSTOM: ScenarioAssumptions = { ...CONSERVATIVE_SCENARIO, id: 'custom', receivableDelayDays: 14, receivableHaircutPct: 0 }
 
 type DbError = { code?: string; message?: string } | null
@@ -309,6 +310,19 @@ export class SupabaseRepository implements FinanceRepository {
     }
   }
 
+  async existingProductSaleRefs(sourceRefs: string[]): Promise<string[]> {
+    const unique = [...new Set(sourceRefs.filter(Boolean))]
+    const found = new Set<string>()
+    for (let i = 0; i < unique.length; i += REF_BATCH) {
+      const batch = unique.slice(i, i + REF_BATCH)
+      const rows = check(await this.sb.from('product_sales').select('source_ref').eq('company_id', this.companyId).in('source_ref', batch)) as unknown as {
+        source_ref: string | null
+      }[]
+      for (const row of rows) if (row.source_ref) found.add(row.source_ref)
+    }
+    return unique.filter((ref) => found.has(ref))
+  }
+
   async saveProduct(input: SaveProductInput): Promise<Product> {
     const name = input.name.trim()
     if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do produto deve ter entre 2 e 120 caracteres.')
@@ -318,10 +332,14 @@ export class SupabaseRepository implements FinanceRepository {
     if (input.stock !== null && input.stockUpdatedAt !== undefined && input.stockUpdatedAt !== null && !isISODate(input.stockUpdatedAt)) {
       throw new RepositoryError('Data do estoque inválida.')
     }
+    const today = todayIn()
+    if (input.stock !== null && input.stockUpdatedAt && isISODate(input.stockUpdatedAt) && input.stockUpdatedAt > today) {
+      throw new RepositoryError('A data do estoque não pode estar no futuro.')
+    }
     // Só colunas editáveis: company_id vai apenas no INSERT, nunca no UPDATE.
     const row = productToRow({
       ...input,
-      stockUpdatedAt: input.stock === null ? null : (input.stockUpdatedAt ?? todayIn()),
+      stockUpdatedAt: input.stock === null ? null : (input.stockUpdatedAt ?? today),
     })
     const s = await this.state()
     if (input.id) {

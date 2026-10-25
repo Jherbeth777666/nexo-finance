@@ -173,6 +173,98 @@ describe.skipIf(!configured)('produtos, vendas por item e eventos locais', () =>
     expect(audits.data!.some((a) => a.entity === 'import' && a.action === 'import')).toBe(true)
   })
 
+  it('casa o produto por nome normalizado (acentos, caixa e espaços)', async () => {
+    const name = `Açúcar refinado ${run}`
+    const created = await owner.sb.from('products').insert({ company_id: company, name, code: null, unit: 'un' }).select('id').single()
+    if (created.error) throw created.error
+    const before = await owner.sb.from('products').select('id').eq('company_id', company)
+
+    const sourceRef = `teste:${run}:nome-normalizado`
+    const result = await owner.sb.rpc(
+      'import_product_sales',
+      importArgs([
+        saleRow({
+          product_name: `  ACUCAR   REFINADO ${run.toUpperCase()} `,
+          product_code: null,
+          unit_cost: null,
+          stock: null,
+          source_ref: sourceRef,
+        }),
+      ]),
+    )
+    expect(result.error).toBeNull()
+    const after = await owner.sb.from('products').select('id').eq('company_id', company)
+    expect(after.data).toHaveLength(before.data!.length)
+    const sale = await owner.sb.from('product_sales').select('product_id').eq('company_id', company).eq('source_ref', sourceRef).single()
+    expect(sale.data!.product_id).toBe(created.data!.id)
+  })
+
+  it('não atualiza o cadastro quando custo e estoque não mudam', async () => {
+    const created = await owner.sb
+      .from('products')
+      .insert({
+        company_id: company,
+        name: `Feijão preto ${run}`,
+        code: null,
+        unit: 'un',
+        cost_price: '8.00',
+        stock: '20.000',
+        stock_updated_at: addDays(today, -3),
+      })
+      .select('id')
+      .single()
+    if (created.error) throw created.error
+
+    const before = await owner.sb.from('audit_logs').select('id').eq('company_id', company).eq('entity', 'product').eq('action', 'update')
+
+    const result = await owner.sb.rpc(
+      'import_product_sales',
+      importArgs([
+        saleRow({ product_name: `FEIJÃO PRETO ${run}`, product_code: null, unit_cost: null, stock: null, source_ref: `teste:${run}:sem-cadastro` }),
+        saleRow({
+          product_name: `Feijão preto ${run}`,
+          product_code: null,
+          sale_date: addDays(today, -3),
+          unit_cost: '8.00',
+          stock: '20.000',
+          source_ref: `teste:${run}:cadastro-igual`,
+        }),
+      ]),
+    )
+    expect(result.error).toBeNull()
+
+    const after = await owner.sb.from('audit_logs').select('id').eq('company_id', company).eq('entity', 'product').eq('action', 'update')
+    expect(after.data).toHaveLength(before.data!.length)
+  })
+
+  it('restringe colunas de local_events e audita UPDATE/DELETE', async () => {
+    const event = await owner.sb
+      .from('local_events')
+      .insert({ company_id: company, name: `Feira ${run}`, start_date: addDays(today, 5) })
+      .select('id')
+      .single()
+    if (event.error) throw event.error
+
+    const changeCompany = await owner.sb.from('local_events').update({ company_id: otherCompany }).eq('id', event.data!.id)
+    expect(changeCompany.error?.code).toBe('42501')
+
+    const renamed = await owner.sb
+      .from('local_events')
+      .update({ name: `Feira grande ${run}` })
+      .eq('id', event.data!.id)
+      .select('name')
+      .single()
+    expect(renamed.error).toBeNull()
+    expect(renamed.data!.name).toBe(`Feira grande ${run}`)
+
+    const removed = await owner.sb.from('local_events').delete().eq('id', event.data!.id)
+    expect(removed.error).toBeNull()
+
+    const audits = await owner.sb.from('audit_logs').select('action').eq('company_id', company).eq('entity', 'local_event').eq('entity_id', event.data!.id)
+    expect(audits.error).toBeNull()
+    expect(audits.data!.map((a) => a.action).sort()).toEqual(['create', 'delete', 'update'])
+  })
+
   it('resume as vendas por produto na janela (paridade com o domínio)', async () => {
     const summary = await owner.sb.rpc('product_sales_summary', { p_company: company, p_from: addDays(today, -30), p_to: today })
     expect(summary.error).toBeNull()

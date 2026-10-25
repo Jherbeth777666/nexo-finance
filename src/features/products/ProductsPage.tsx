@@ -71,7 +71,9 @@ export default function ProductsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const viewer = data.company.role === 'viewer'
-  const from = addDays(today, -89)
+  // A sazonalidade precisa de mais histórico que as janelas de ranking; 365 dias também evitam
+  // que a detecção de "já importado" dependa da janela carregada.
+  const from = addDays(today, -364)
 
   const loadSales = () => {
     setLoadError(null)
@@ -436,8 +438,8 @@ export default function ProductsPage() {
       {importOpen && (
         <ProductImportDialog
           products={data.products}
-          sales={derived.list}
           today={today}
+          findExistingRefs={(refs) => actions.existingProductSaleRefs(refs)}
           onClose={() => setImportOpen(false)}
           onDone={() => {
             loadSales()
@@ -720,6 +722,7 @@ function ProductFormDialog({
     leadTimeDays: number | null
   }) => Promise<void>
 }) {
+  const { today } = useStore()
   const [name, setName] = useState(product?.name ?? '')
   const [code, setCode] = useState(product?.code ?? '')
   const [unit, setUnit] = useState(product?.unit ?? 'un')
@@ -742,6 +745,7 @@ function ProductFormDialog({
     if (cost.trim() && costCents === null) return setError('Custo inválido. Use, por exemplo, 22,50.')
     if (stock.trim() && stockMilli === null) return setError('Estoque inválido. Use, por exemplo, 12 ou 2,5.')
     if (minStock.trim() && minMilli === null) return setError('Estoque mínimo inválido.')
+    if (stockMilli !== null && stockDate && stockDate > today) return setError('A data da contagem não pode estar no futuro.')
     const leadDays = lead.trim() ? Number(lead) : null
     if (leadDays !== null && (!Number.isInteger(leadDays) || leadDays < 0 || leadDays > 365))
       return setError('O prazo deve ser um número inteiro entre 0 e 365.')
@@ -799,7 +803,16 @@ function ProductFormDialog({
           <Input id="product-cost" value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" placeholder="22,50" />
         </Field>
         <Field label="Estoque atual" htmlFor="product-stock">
-          <Input id="product-stock" value={stock} onChange={(e) => setStock(e.target.value)} inputMode="decimal" placeholder="40" />
+          <Input
+            id="product-stock"
+            value={stock}
+            onChange={(e) => {
+              setStock(e.target.value)
+              setStockDate(today)
+            }}
+            inputMode="decimal"
+            placeholder="40"
+          />
         </Field>
         <Field label="Data da contagem" htmlFor="product-stock-date" hint="Vendas depois desta data são descontadas.">
           <Input id="product-stock-date" type="date" value={stockDate} onChange={(e) => setStockDate(e.target.value)} />
@@ -822,15 +835,15 @@ function ProductFormDialog({
 
 function ProductImportDialog({
   products,
-  sales,
   today,
+  findExistingRefs,
   onClose,
   onDone,
   onImport,
 }: {
   products: Product[]
-  sales: ProductSale[]
   today: ISODate
+  findExistingRefs: (sourceRefs: string[]) => Promise<string[]>
   onClose: () => void
   onDone: () => void
   onImport: (
@@ -902,7 +915,28 @@ function ProductImportDialog({
           {table && !rows && (
             <Button
               variant="primary"
-              onClick={() => setRows(validateProductSaleRows(table, mapping, { products, existing: sales, asOf: today }))}
+              loading={busy}
+              onClick={async () => {
+                if (!table) return
+                setBusy(true)
+                setError(null)
+                try {
+                  const preview = validateProductSaleRows(table, mapping, { products, existing: [], asOf: today })
+                  const refs = preview.map((r) => r.sale?.sourceRef).filter((ref): ref is string => !!ref)
+                  const existing = refs.length ? await findExistingRefs(refs) : []
+                  setRows(
+                    validateProductSaleRows(table, mapping, {
+                      products,
+                      existing: existing.map((sourceRef) => ({ sourceRef })),
+                      asOf: today,
+                    }),
+                  )
+                } catch {
+                  setError('Não foi possível verificar as vendas já importadas.')
+                } finally {
+                  setBusy(false)
+                }
+              }}
               disabled={mappingIssues.length > 0}
             >
               Validar planilha

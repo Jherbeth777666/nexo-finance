@@ -185,6 +185,55 @@ describe('mapeamento de planilha de vendas por item', () => {
     expect(productSourceRef({ productCode: 'AB-1', productName: 'x', saleDate: '2026-03-20', quantity: 1000, revenue: 500 })).toBe(
       'sale:code:ab 1|2026-03-20|1000|500',
     )
+    expect(productSourceRef({ productCode: null, productName: 'Açúcar', saleDate: '2026-03-20', quantity: 1000, revenue: 500, externalId: 'NF 42' })).toBe(
+      'sale:name:acucar|ext:nf 42|2026-03-20|1000|500',
+    )
+  })
+
+  it('desmarca devolução com quantidade não positiva mesmo sem valor total', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Quantidade', 'Valor unitário', 'Situação'],
+      ['23/03/2026', 'Arroz 5 kg', '-1', '15,00', ''],
+      ['23/03/2026', 'Arroz 5 kg', '1', '15,00', 'Devolução'],
+    ])
+    const r = validateProductSaleRows(t, suggestProductMapping(t.headers), { products: [arroz], existing: [], asOf })
+    expect(r[0].errors).toEqual([])
+    expect(r[0].include).toBe(false)
+    expect(r[0].warnings.join()).toMatch(/zero ou negativa/)
+    expect(r[1].errors).toEqual([])
+    expect(r[1].include).toBe(false)
+    expect(r[1].warnings.join()).toMatch(/cancelamento ignorado/)
+  })
+
+  it('valida nome mínimo de 2 e código máximo de 40 como o banco', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Código', 'Quantidade', 'Valor total'],
+      ['20/03/2026', 'A', 'X'.repeat(41), '1', '10,00'],
+    ])
+    const r = validateProductSaleRows(t, suggestProductMapping(t.headers), { products: [], existing: [], asOf })
+    expect(r[0].errors.join()).toMatch(/ao menos 2/)
+    expect(r[0].errors.join()).toMatch(/acima de 40/)
+  })
+
+  it('casa pelo nome quando o código informado não existe no catálogo', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Código', 'Quantidade', 'Valor total'],
+      ['20/03/2026', 'ARROZ 5 KG', 'CODIGO-NOVO', '1', '10,00'],
+    ])
+    const r = validateProductSaleRows(t, suggestProductMapping(t.headers), { products: [arroz], existing: [], asOf })
+    expect(r[0].sale?.productId).toBe(arroz.id)
+  })
+
+  it('inclui o identificador de origem na chave e separa vendas iguais no mesmo dia', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Código', 'Quantidade', 'Valor total', 'Identificador de origem'],
+      ['20/03/2026', 'Arroz 5 kg', 'ARZ', '1', '10,00', 'CUPOM-1'],
+      ['20/03/2026', 'Arroz 5 kg', 'ARZ', '1', '10,00', 'CUPOM-2'],
+    ])
+    const r = validateProductSaleRows(t, suggestProductMapping(t.headers), { products: [arroz], existing: [], asOf })
+    expect(r[0].sale!.sourceRef).not.toBe(r[1].sale!.sourceRef)
+    expect(r[1].warnings.join()).not.toMatch(/Igual à linha/)
+    expect(r[0].sale!.sourceRef).toContain('ext:cupom 1')
   })
 })
 
@@ -205,8 +254,23 @@ describe('análises de produtos', () => {
 
   it('encontra produtos parados e quedas fortes com evidência', () => {
     const stale = staleProducts([arroz, feijao, carvao], sales, asOf)
-    expect(stale.find((s) => s.product.id === feijao.id)).toMatchObject({ reason: 'no_recent_sales', recentQuantity: 0, previousQuantity: 12000 })
+    expect(stale.find((s) => s.product.id === feijao.id)).toMatchObject({ reason: 'no_recent_sales', recentQuantity: 0, previousQuantity: 12000, dropPct: 100 })
     expect(stale.find((s) => s.product.id === carvao.id)!.dropPct).toBeCloseTo(80, 5)
+  })
+
+  it('detecta produto parado há mais de 42 dias e prioriza parados totais', () => {
+    const paradoHaMuitoTempo = product({ id: 'p-parado', name: "Farinha d'água" })
+    const vendas = [
+      sale({ id: 'old1', productId: paradoHaMuitoTempo.id, saleDate: '2026-01-15', quantity: 5000, revenue: 10000 }),
+      sale({ id: 'old2', productId: paradoHaMuitoTempo.id, saleDate: '2026-01-20', quantity: 5000, revenue: 10000 }),
+      ...sales.filter((s) => s.productId === carvao.id),
+    ]
+    const stale = staleProducts([paradoHaMuitoTempo, carvao], vendas, asOf)
+    const parado = stale.find((s) => s.product.id === paradoHaMuitoTempo.id)!
+    expect(parado).toMatchObject({ reason: 'no_recent_sales', dropPct: 100, recentQuantity: 0, previousQuantity: 0 })
+    expect(parado.daysWithoutSale).toBeGreaterThan(42)
+    expect(stale[0].product.id).toBe(paradoHaMuitoTempo.id)
+    expect(stale[1].product.id).toBe(carvao.id)
   })
 
   it('estima estoque descontando apenas vendas posteriores à contagem', () => {

@@ -421,6 +421,18 @@ export class DemoRepository implements FinanceRepository {
     )
   }
 
+  async existingProductSaleRefs(sourceRefs: string[]): Promise<string[]> {
+    const unique = [...new Set(sourceRefs.filter(Boolean))]
+    if (!unique.length) return []
+    const wanted = new Set(unique)
+    const existing = new Set(
+      this.read()
+        .productSales.map((sale) => sale.sourceRef)
+        .filter((ref): ref is string => !!ref && wanted.has(ref)),
+    )
+    return unique.filter((ref) => existing.has(ref))
+  }
+
   async saveProduct(input: SaveProductInput): Promise<Product> {
     const name = input.name.trim()
     if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do produto deve ter entre 2 e 120 caracteres.')
@@ -433,8 +445,12 @@ export class DemoRepository implements FinanceRepository {
     const minStock = validateOptionalQuantity(input.minStock, 'estoque mínimo')
     const leadTimeDays = input.leadTimeDays === null ? null : Math.trunc(input.leadTimeDays)
     if (leadTimeDays !== null && (leadTimeDays < 0 || leadTimeDays > 365)) throw new RepositoryError('O prazo do fornecedor deve ficar entre 0 e 365 dias.')
-    const stockUpdatedAt = stock === null ? null : input.stockUpdatedAt && isISODate(input.stockUpdatedAt) ? input.stockUpdatedAt : todayIn()
     const s = this.read()
+    const today = todayIn(s.company.timezone)
+    if (input.stock !== null && input.stockUpdatedAt && isISODate(input.stockUpdatedAt) && input.stockUpdatedAt > today) {
+      throw new RepositoryError('A data do estoque não pode estar no futuro.')
+    }
+    const stockUpdatedAt = stock === null ? null : input.stockUpdatedAt && isISODate(input.stockUpdatedAt) ? input.stockUpdatedAt : today
     const now = new Date().toISOString()
     if (input.id) {
       const prev = s.products.find((p) => p.id === input.id)

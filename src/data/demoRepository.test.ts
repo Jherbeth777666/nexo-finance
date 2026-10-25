@@ -1,7 +1,7 @@
 import { DemoRepository } from './demoRepository'
 import { validateTransaction, emptyInput } from '@/domain/transactions'
 import { accountBalances } from '@/domain/finance/metrics'
-import { addDays } from '@/lib/dates'
+import { addDays, todayIn } from '@/lib/dates'
 
 class MemoryStorage implements Storage {
   private m = new Map<string, string>()
@@ -318,6 +318,30 @@ describe('produtos no repositório de demonstração', () => {
     await expect(repo.saveProduct({ ...product, id: undefined, name: 'X' })).rejects.toThrow(/2 e 120/)
     await expect(repo.saveProduct({ ...product, id: undefined, name: 'Outro', costPrice: -1 })).rejects.toThrow(/custo/)
     await expect(repo.saveProduct({ ...product, id: undefined, name: 'Outro 2', stock: 1.5 })).rejects.toThrow(/milésimos/)
+    await expect(repo.saveProduct({ ...product, stockUpdatedAt: addDays(todayIn(), 1) })).rejects.toThrow(/futuro/)
+  })
+
+  it('consulta sourceRef existentes sem depender da janela carregada', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    await repo.importProductSales(
+      [
+        {
+          productName: 'Venda antiga',
+          productCode: null,
+          productId: null,
+          saleDate: addDays(snap.anchor, -400),
+          quantity: 1000,
+          revenue: 1000,
+          unitCost: null,
+          stock: null,
+          sourceRef: 'teste:antiga',
+        },
+      ],
+      { fileName: 'antigas.csv', fileHash: 'c'.repeat(64), totalRows: 1, imported: 1, skipped: 0, errors: 0, warnings: 0 },
+    )
+    expect(await repo.existingProductSaleRefs(['teste:antiga', 'teste:inexistente'])).toEqual(['teste:antiga'])
+    expect(await repo.existingProductSaleRefs([])).toEqual([])
   })
 
   it('importa vendas, cria produto novo, atualiza estoque/custo e evita duplicidade', async () => {
