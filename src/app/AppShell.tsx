@@ -67,6 +67,7 @@ export default function AppShell() {
   const repo = useMemo<FinanceRepository | null>(
     () => (live ? (membership && auth.client ? new SupabaseRepository(auth.client, membership.companyId, membership.role) : null) : new DemoRepository()),
     // Um repositório por empresa/modo; recriar só quando a chave muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- repoKey resume live e membership de propósito
     [repoKey, auth.client],
   )
 

@@ -114,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
       unsub?.()
     }
+    // Inicialização única por configuração; status só serve de guarda de entrada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configured])
 
   const setActiveCompany = useCallback((id: string) => {

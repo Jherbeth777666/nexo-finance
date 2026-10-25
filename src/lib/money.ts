@@ -64,7 +64,7 @@ export function parseMoney(input: unknown): Cents | null {
     return Math.round(input * 100)
   }
   if (typeof input !== 'string') return null
-  let s = input.trim().replace(/ /g, ' ')
+  let s = input.trim().replace(/\u00a0/g, ' ')
   if (!s) return null
   let negative = false
   if (/^\(.*\)$/.test(s)) {
