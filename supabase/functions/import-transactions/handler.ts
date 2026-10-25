@@ -2,10 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import { IMPORT_LIMITS } from '@/domain/import/pipeline'
 import { validateImportBatch } from '@/domain/import/serverValidation'
 import { todayIn } from '@/lib/dates'
+import { matchAllowedOrigin, parseAllowedOrigins } from '@/lib/cors'
 
 /**
  * Edge Function de importação.
- * - CORS restrito a ALLOWED_ORIGIN (sem fallback "*") e somente POST.
+ * - CORS restrito às origens de ALLOWED_ORIGIN (lista separada por vírgula) (sem fallback "*") e somente POST.
  * - Limite de 5 MB e Authorization obrigatório.
  * - Consome rate_limit_import_validation() (30 validações a cada 10 min) antes de ler os dados da empresa.
  * - Valida o lote com a MESMA função pura do domínio e só então chama import_transactions,
@@ -50,10 +51,13 @@ function validMeta(body: Record<string, unknown>, rows: unknown[]): boolean {
 }
 
 Deno.serve(async (req) => {
-  const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN')?.replace(/\/$/, '') ?? null
+  const allowedOrigins = parseAllowedOrigins(Deno.env.get('ALLOWED_ORIGIN'))
   const origin = req.headers.get('Origin')
 
-  if (!allowedOrigin) return json({ error: 'Serviço indisponível.' }, 500, null, origin)
+  if (!allowedOrigins.length) return json({ error: 'Serviço indisponível.' }, 500, null, origin)
+  // Só a origem que bateu volta em Access-Control-Allow-Origin (nunca a lista nem "*"); sem
+  // correspondência fica null e as checagens abaixo recusam o pedido vindo de navegador.
+  const allowedOrigin = matchAllowedOrigin(allowedOrigins, origin)
 
   if (req.method === 'OPTIONS') {
     if (origin && origin !== allowedOrigin) return new Response(null, { status: 403, headers: { Vary: 'Origin' } })

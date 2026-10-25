@@ -7,10 +7,11 @@ import { buildPrompt, PROMPT_VERSION } from '@/domain/ai/prompts'
 import { AiProviderError, createProvider, type AiProvider } from '@/domain/ai/providers'
 import { numericToCents } from '@/data/supabaseMapping'
 import { todayIn } from '@/lib/dates'
+import { matchAllowedOrigin, parseAllowedOrigins } from '@/lib/cors'
 
 /**
  * Edge Function de análise por IA.
- * - CORS restrito a ALLOWED_ORIGIN, somente POST, payload máximo de 4 KB e JWT obrigatório.
+ * - CORS restrito às origens de ALLOWED_ORIGIN (lista separada por vírgula), somente POST, payload máximo de 4 KB e JWT obrigatório.
  * - Desligada por padrão: sem AI_PROVIDER válido/AI_API_KEY responde 503 sem tocar no banco.
  * - Só agregados vão ao provedor (nunca descrições, contrapartes ou notas).
  * - rate_limit_ai() e ai_quota_reserve() usam o JWT do usuário; service_role só finaliza a linha reservada.
@@ -58,10 +59,13 @@ function cents(value: unknown): number {
 }
 
 Deno.serve(async (req) => {
-  const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN')?.replace(/\/$/, '') ?? null
+  const allowedOrigins = parseAllowedOrigins(Deno.env.get('ALLOWED_ORIGIN'))
   const origin = req.headers.get('Origin')
 
-  if (!allowedOrigin) return json({ error: 'Serviço indisponível.' }, 500, null, origin)
+  if (!allowedOrigins.length) return json({ error: 'Serviço indisponível.' }, 500, null, origin)
+  // Só a origem que bateu volta em Access-Control-Allow-Origin (nunca a lista nem "*"); sem
+  // correspondência fica null e as checagens abaixo recusam o pedido vindo de navegador.
+  const allowedOrigin = matchAllowedOrigin(allowedOrigins, origin)
   if (req.method === 'OPTIONS') {
     if (origin && origin !== allowedOrigin) return new Response(null, { status: 403, headers: { Vary: 'Origin' } })
     return new Response(null, { status: 204, headers: corsHeaders(allowedOrigin, origin) })
