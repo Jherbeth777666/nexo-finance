@@ -30,10 +30,10 @@ export function validateLogin(i: { email: string; password: string }): AuthError
   return e
 }
 
-export function validateSignup(i: SignupInput): AuthErrors {
+export function validateSignup(i: SignupInput, options: { requiresCompany?: boolean } = {}): AuthErrors {
   const e: AuthErrors = {}
   if (i.name.trim().length < 2) e.name = 'Informe seu nome'
-  if (i.company.trim().length < 2) e.company = 'Informe o nome da empresa'
+  if (options.requiresCompany !== false && i.company.trim().length < 2) e.company = 'Informe o nome da empresa'
   const em = validateEmail(i.email)
   if (em) e.email = em
   const pw = validatePassword(i.password)

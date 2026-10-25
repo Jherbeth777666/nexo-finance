@@ -5,6 +5,9 @@ import type {
   AuditEntry,
   Category,
   Company,
+  CompanyInvite,
+  CompanyMember,
+  InviteRole,
   Transaction,
 } from '@/domain/types'
 import type { AlertConfig } from '@/domain/finance/alerts'
@@ -42,6 +45,11 @@ export interface SavedScenario {
   resultSummary: { currentMin: number; alternativeMin: number; endDelta: number; firstNegative: string | null }
 }
 
+export interface CreateInviteInput {
+  email: string
+  role: InviteRole
+}
+
 export interface CompanySnapshot {
   company: Company
   accounts: Account[]
@@ -72,6 +80,12 @@ export interface FinanceRepository {
   updateAccountOpeningBalance(accountId: string, openingBalance: Cents): Promise<Account>
   saveScenario(s: Omit<SavedScenario, 'id' | 'createdAt'>): Promise<SavedScenario>
   deleteScenario(id: string): Promise<void>
+  listMembers(): Promise<CompanyMember[]>
+  listInvites(): Promise<CompanyInvite[]>
+  createInvite(input: CreateInviteInput): Promise<CompanyInvite>
+  revokeInvite(id: string): Promise<void>
+  updateMemberRole(userId: string, role: InviteRole): Promise<CompanyMember>
+  removeMember(userId: string): Promise<void>
   reset(): Promise<CompanySnapshot>
 }
 

@@ -21,6 +21,7 @@ export const DEMO_COMPANY: Company = {
   timezone: 'America/Sao_Paulo',
   currency: 'BRL',
   isDemo: true,
+  role: 'owner',
 }
 
 export const DEMO_CATEGORIES: Category[] = [

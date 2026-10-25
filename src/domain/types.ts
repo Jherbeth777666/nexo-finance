@@ -71,6 +71,30 @@ export interface Company {
 
 export type MemberRole = 'owner' | 'admin' | 'member' | 'viewer'
 
+/** Papéis que podem ser atribuídos por convite ou alteração: o dono nunca é transferido aqui. */
+export type InviteRole = Exclude<MemberRole, 'owner'>
+
+export interface CompanyMember {
+  userId: string
+  name: string
+  /** Disponível no modo de demonstração; no Supabase o e-mail não é exposto pela API pública. */
+  email?: string
+  role: MemberRole
+  joinedAt: string
+}
+
+export interface CompanyInvite {
+  id: string
+  email: string
+  role: InviteRole
+  createdAt: string
+  expiresAt: string
+  acceptedAt: string | null
+  revokedAt: string | null
+  /** Token puro: existe apenas no retorno de `createInvite`; nunca é gravado no banco. */
+  token?: string
+}
+
 export type AlertSeverity = 'critical' | 'warning' | 'info'
 export type AlertState = 'new' | 'in_review' | 'resolved' | 'ignored'
 export type AlertRule =

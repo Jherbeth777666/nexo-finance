@@ -1,10 +1,11 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { DataProvider, useStore } from '@/data/store'
 import { DemoRepository } from '@/data/demoRepository'
 import { SupabaseRepository } from '@/data/supabaseRepository'
 import type { FinanceRepository } from '@/data/repository'
 import { useAuth } from '@/features/auth/session'
+import { readPendingInvite } from '@/features/invites/pendingInvite'
 import { Onboarding } from './Onboarding'
 import { Icon, Logo, type IconName } from '@/components/icons'
 import { Button, EmptyState, Tag, cx } from '@/components/ui'
@@ -37,6 +38,7 @@ const readDemoPref = () => {
  */
 export default function AppShell() {
   const auth = useAuth()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [demoPref, setDemoPref] = useState(readDemoPref)
 
@@ -51,6 +53,13 @@ export default function AppShell() {
     params.delete('modo')
     setParams(params, { replace: true })
   }, [params, setParams])
+
+  // Convite pendente tem prioridade: aceitar antes de entrar na empresa/onboarding.
+  useEffect(() => {
+    if (auth.status !== 'signed_in' || demoPref) return
+    const token = readPendingInvite()
+    if (token) navigate(`/convite/${encodeURIComponent(token)}`, { replace: true })
+  }, [auth.status, demoPref, navigate])
 
   const live = auth.status === 'signed_in' && !demoPref
   const membership = auth.memberships.find((m) => m.companyId === auth.activeCompanyId) ?? null

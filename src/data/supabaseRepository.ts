@@ -1,12 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Account, AlertState, AuditEntry, Category, Company, MemberRole, Transaction } from '@/domain/types'
+import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, MemberRole, Transaction } from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG, type AlertConfig } from '@/domain/finance/alerts'
 import { CONSERVATIVE_SCENARIO, type ScenarioAssumptions } from '@/domain/finance/projection'
-import { validateCompanyName, validateOpeningBalance } from '@/domain/company'
+import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import type { ValidTransaction } from '@/domain/transactions'
 import { todayIn } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
-import { RepositoryError, type CompanySnapshot, type FinanceRepository, type ImportRecord, type SavedScenario } from './repository'
+import {
+  RepositoryError,
+  type CompanySnapshot,
+  type CreateInviteInput,
+  type FinanceRepository,
+  type ImportRecord,
+  type SavedScenario,
+} from './repository'
 import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
 
 /**
@@ -313,8 +320,115 @@ export class SupabaseRepository implements FinanceRepository {
     s.scenarios = s.scenarios.filter((x) => x.id !== id)
   }
 
+  async listMembers(): Promise<CompanyMember[]> {
+    const rows = check(
+      await this.sb.from('company_members').select('user_id,role,created_at').eq('company_id', this.companyId).order('created_at'),
+    ) as { user_id: string; role: MemberRole; created_at: string }[]
+    const ids = rows.map((r) => r.user_id)
+    const names = new Map<string, string>()
+    if (ids.length) {
+      const profiles = check(await this.sb.from('profiles').select('id,full_name').in('id', ids)) as { id: string; full_name: string }[]
+      for (const p of profiles) names.set(p.id, p.full_name || 'Usuário')
+    }
+    return rows.map((r) => ({ userId: r.user_id, name: names.get(r.user_id) ?? 'Usuário', role: r.role, joinedAt: r.created_at }))
+  }
+
+  async listInvites(): Promise<CompanyInvite[]> {
+    const rows = check(
+      await this.sb
+        .from('company_invites')
+        .select('id,email,role,created_at,expires_at,accepted_at,revoked_at')
+        .eq('company_id', this.companyId)
+        .order('created_at', { ascending: false }),
+    ) as InviteRow[]
+    return rows.map(rowToInvite)
+  }
+
+  async createInvite(input: CreateInviteInput): Promise<CompanyInvite> {
+    const email = validateInviteEmail(input.email)
+    if (!email.ok) throw new RepositoryError(email.error)
+    const role = validateInviteRole(input.role)
+    if (!role.ok) throw new RepositoryError(role.error)
+    const created = check(
+      await this.sb.rpc('create_invite', { p_company: this.companyId, p_email: email.value, p_role: role.value }),
+    ) as { id: string; token: string }
+    const now = new Date()
+    return {
+      id: created.id,
+      email: email.value,
+      role: role.value,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      acceptedAt: null,
+      revokedAt: null,
+      token: created.token,
+    }
+  }
+
+  async revokeInvite(id: string): Promise<void> {
+    check(await this.sb.rpc('revoke_invite', { p_invite: id }))
+  }
+
+  async updateMemberRole(userId: string, role: InviteRole): Promise<CompanyMember> {
+    const valid = validateInviteRole(role)
+    if (!valid.ok) throw new RepositoryError(valid.error)
+    // A política do banco impede tocar na linha do owner; o filtro repete a regra no cliente.
+    const rows = check(
+      await this.sb
+        .from('company_members')
+        .update({ role: valid.value })
+        .eq('company_id', this.companyId)
+        .eq('user_id', userId)
+        .neq('role', 'owner')
+        .select('user_id,role,created_at'),
+    ) as { user_id: string; role: MemberRole; created_at: string }[]
+    // RLS não gera erro ao bloquear: 0 linhas significa sem permissão, owner ou membro inexistente.
+    if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para alterar.')
+    return (await this.listMembers()).find((m) => m.userId === userId) ?? {
+      userId: rows[0].user_id,
+      name: 'Usuário',
+      role: rows[0].role,
+      joinedAt: rows[0].created_at,
+    }
+  }
+
+  async removeMember(userId: string): Promise<void> {
+    const rows = check(
+      await this.sb
+        .from('company_members')
+        .delete()
+        .eq('company_id', this.companyId)
+        .eq('user_id', userId)
+        .neq('role', 'owner')
+        .select('user_id'),
+    ) as { user_id: string }[]
+    if (!rows.length) throw new RepositoryError('Membro não encontrado, é o proprietário ou você não tem permissão para remover.')
+  }
+
   async reset(): Promise<CompanySnapshot> {
     throw new RepositoryError('Reinicializar está disponível apenas no modo de demonstração.')
+  }
+}
+
+interface InviteRow {
+  id: string
+  email: string
+  role: InviteRole
+  created_at: string
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+}
+
+function rowToInvite(r: InviteRow): CompanyInvite {
+  return {
+    id: r.id,
+    email: r.email,
+    role: r.role,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    acceptedAt: r.accepted_at,
+    revokedAt: r.revoked_at,
   }
 }
 

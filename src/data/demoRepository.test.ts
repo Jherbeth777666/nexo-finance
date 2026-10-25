@@ -146,6 +146,84 @@ describe('repositório de demonstração', () => {
   })
 })
 
+describe('equipe no repositório de demonstração', () => {
+  it('lista a equipe fictícia e cria convite com token de demonstração', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const members = await repo.listMembers()
+    expect(members.map((m) => m.role)).toEqual(['owner', 'member', 'viewer'])
+    expect(members.every((m) => !!m.email)).toBe(true)
+
+    const invite = await repo.createInvite({ email: '  Nova@Exemplo.com ', role: 'admin' })
+    expect(invite).toMatchObject({ email: 'nova@exemplo.com', role: 'admin', acceptedAt: null, revokedAt: null })
+    expect(invite.token).toMatch(/^demo-/)
+    expect(await repo.listInvites()).toHaveLength(1)
+
+    const audit = (await repo.load()).audit[0]
+    expect(audit).toMatchObject({ action: 'create', entity: 'invite', entityId: invite.id })
+    expect(audit.summary).toContain('nova@exemplo.com')
+    expect(audit.summary).not.toContain(invite.token!)
+  })
+
+  it('rejeita convite para quem já é membro, convite ativo duplicado e entrada inválida', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    await expect(repo.createInvite({ email: 'MARINA@exemplo.com.br', role: 'member' })).rejects.toThrow(/já faz parte/)
+    await repo.createInvite({ email: 'x@exemplo.com', role: 'member' })
+    await expect(repo.createInvite({ email: 'x@exemplo.com', role: 'viewer' })).rejects.toThrow(/convite ativo/)
+    await expect(repo.createInvite({ email: 'sem-arroba', role: 'member' })).rejects.toThrow(/válido/)
+    await expect(repo.createInvite({ email: 'z@exemplo.com', role: 'owner' as never })).rejects.toThrow(/Papel inválido/)
+  })
+
+  it('revoga convite, troca papel e remove membro, protegendo o owner', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const members = await repo.listMembers()
+    const owner = members.find((m) => m.role === 'owner')!
+    const member = members.find((m) => m.role === 'member')!
+
+    const invite = await repo.createInvite({ email: 'convidado@exemplo.com', role: 'viewer' })
+    await repo.revokeInvite(invite.id)
+    expect((await repo.listInvites())[0].revokedAt).toBeTruthy()
+
+    await repo.updateMemberRole(member.userId, 'viewer')
+    expect((await repo.listMembers()).find((m) => m.userId === member.userId)?.role).toBe('viewer')
+    await repo.removeMember(member.userId)
+    expect((await repo.listMembers()).some((m) => m.userId === member.userId)).toBe(false)
+
+    await expect(repo.updateMemberRole(owner.userId, 'admin')).rejects.toThrow(/proprietário/)
+    await expect(repo.removeMember(owner.userId)).rejects.toThrow(/proprietário/)
+    await expect(repo.updateMemberRole('nao-existe', 'member')).rejects.toThrow(/não encontrado/)
+    await expect(repo.removeMember('nao-existe')).rejects.toThrow(/não encontrado/)
+    await expect(repo.revokeInvite('nao-existe')).rejects.toThrow(/não encontrado/)
+
+    const audit = (await repo.load()).audit.map((a) => a.entity)
+    expect(audit).toEqual(expect.arrayContaining(['invite', 'member']))
+  })
+
+  it('persiste equipe e convites entre instâncias', async () => {
+    const storage = new MemoryStorage()
+    const first = new DemoRepository(storage)
+    await first.createInvite({ email: 'persistente@exemplo.com', role: 'member' })
+    const second = new DemoRepository(storage)
+    expect(await second.listInvites()).toHaveLength(1)
+    expect((await second.listMembers()).length).toBe(3)
+  })
+
+  it('migra estado antigo sem equipe e sem papel da empresa', async () => {
+    const storage = new MemoryStorage()
+    const first = new DemoRepository(storage)
+    await first.reset()
+    const raw = JSON.parse(storage.getItem('nexo.demo.v1')!)
+    delete raw.members
+    delete raw.invites
+    delete raw.company.role
+    storage.setItem('nexo.demo.v1', JSON.stringify(raw))
+
+    const repo = new DemoRepository(storage)
+    expect((await repo.load()).company.role).toBe('owner')
+    expect(await repo.listMembers()).toHaveLength(3)
+    expect(await repo.listInvites()).toEqual([])
+  })
+})
+
 describe('validação de lançamentos', () => {
   const ctx = {
     categories: [
