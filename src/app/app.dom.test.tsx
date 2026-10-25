@@ -278,7 +278,7 @@ describe('convite de membros', () => {
     expect(screen.queryByLabelText('Nome da empresa')).toBeNull()
     await user.type(name, 'Pessoa Convidada')
     await user.type(email, 'convidada@exemplo.com')
-    await user.type(password, 'senhaforte123')
+    await user.type(password, 'senhaforte123') // gitleaks:allow (senha fictícia de teste)
     await user.type(screen.getByLabelText('Confirmar senha'), 'senhaforte123')
     await user.click(screen.getByRole('button', { name: 'Criar conta' }))
     expect(screen.queryByText('Informe o nome da empresa')).toBeNull()

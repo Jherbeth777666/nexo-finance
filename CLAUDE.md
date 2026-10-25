@@ -9,7 +9,10 @@ Leia primeiro: `README.md` (rotas e estrutura), `docs/ARQUITETURA.md` (decisões
 - Instalar: `npm ci`
 - Testes: `npm test` (Vitest; 174 testes na importação para cá)
 - Tipos: `npm run typecheck`
+- Lint: `npm run lint` · Formatação: `npm run format:check` (corrigir com `npm run format`)
+- Cobertura: `npm run test:coverage`
 - Build: `npm run build`
+- CI: `.github/workflows/ci.yml` roda tudo acima, mais npm audit, gitleaks e semgrep
 - Testes de banco (precisam de um projeto Supabase de teste): `npm run test:db`
 
 ## Convenções

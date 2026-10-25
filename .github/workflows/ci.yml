@@ -1,0 +1,47 @@
+# CI do Nexo Finance (a partir do modelo ~/.claude/equipe/ci/node.yml).
+# Roda em todo push e pull request; os mesmos verificadores locais do estagio0.sh.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test:coverage
+      - run: npm run build
+      - name: Dependências com vulnerabilidade alta
+        run: npm audit --omit=dev --audit-level=high
+
+  seguranca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Segredos no histórico (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Análise estática de segurança (semgrep)
+        run: pipx run semgrep scan --config p/security-audit --config p/secrets --config p/typescript --metrics=off --error --exclude .ai_workspace .
