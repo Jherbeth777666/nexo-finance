@@ -30,6 +30,7 @@ const paths = {
   lock: 'M6 11h12v10H6V11Zm2 0V7a4 4 0 1 1 8 0v4',
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
   calendar: 'M4 6h16v14H4V6Zm0 4h16M8 3v4M16 3v4',
+  products: 'M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Zm0 0 8 4.5m0 0 8-4.5M12 13v7',
   reset: 'M4 4v6h6M20 20v-6h-6M5.6 15A7 7 0 0 0 18 17.7M18.4 9A7 7 0 0 0 6 6.3',
 } as const
 

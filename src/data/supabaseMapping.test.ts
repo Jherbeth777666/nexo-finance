@@ -1,4 +1,17 @@
-import { centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
+import {
+  centsToNumeric,
+  friendlyDbError,
+  numericToCents,
+  productSaleToRpcRow,
+  productToRow,
+  rowToProduct,
+  rowToProductSale,
+  rowToTransaction,
+  transactionToRow,
+  type ProductRow,
+  type ProductSaleRow,
+  type TxRow,
+} from './supabaseMapping'
 import { suggestMapping, toTable, validateRows } from '@/domain/import/pipeline'
 import { cats } from '@/domain/finance/testkit'
 
@@ -93,5 +106,97 @@ describe('linhas idênticas no mesmo arquivo', () => {
       existing: rows.map((r, i) => ({ ...r.tx!, id: `e${i}`, accountId: 'a', source: 'import' as const, createdAt: '', updatedAt: '' })),
     })
     expect(again.every((r) => r.alreadyImported)).toBe(true)
+  })
+})
+
+describe('mapeamento de produtos e vendas por item', () => {
+  const productRow: ProductRow = {
+    id: 'p',
+    company_id: 'c',
+    name: 'Arroz',
+    code: 'ARZ5',
+    unit: 'un',
+    cost_price: '22.50',
+    stock: '40.000',
+    stock_updated_at: '2026-03-01',
+    min_stock: '12.000',
+    lead_time_days: 10,
+    created_at: 't',
+    updated_at: 't',
+  }
+  it('converte produto do banco sem float', () => {
+    expect(rowToProduct(productRow)).toMatchObject({
+      costPrice: 2250,
+      stock: 40000,
+      minStock: 12000,
+      stockUpdatedAt: '2026-03-01',
+      leadTimeDays: 10,
+    })
+    expect(rowToProduct({ ...productRow, cost_price: null, stock: null, stock_updated_at: null, min_stock: null, lead_time_days: null })).toMatchObject({
+      costPrice: null,
+      stock: null,
+      minStock: null,
+      leadTimeDays: null,
+    })
+    expect(
+      productToRow({
+        name: '  Arroz  ',
+        code: ' ARZ5 ',
+        unit: 'un',
+        costPrice: 2250,
+        stock: 40000,
+        stockUpdatedAt: '2026-03-01',
+        minStock: 12000,
+        leadTimeDays: 10,
+      }),
+    ).toEqual({
+      name: 'Arroz',
+      code: 'ARZ5',
+      unit: 'un',
+      cost_price: '22.50',
+      stock: '40.000',
+      stock_updated_at: '2026-03-01',
+      min_stock: '12.000',
+      lead_time_days: 10,
+    })
+  })
+
+  it('converte venda por item e prepara a linha da RPC', () => {
+    const row: ProductSaleRow = {
+      id: 's',
+      company_id: 'c',
+      product_id: 'p',
+      sale_date: '2026-03-05',
+      quantity: '2.500',
+      revenue: '47.25',
+      unit_cost: '12.90',
+      source_ref: 'sale:x',
+      import_id: null,
+      created_at: 't',
+    }
+    expect(rowToProductSale(row)).toMatchObject({ quantity: 2500, revenue: 4725, unitCost: 1290 })
+    expect(
+      productSaleToRpcRow({
+        productName: 'Pão',
+        productCode: null,
+        productId: 'p',
+        saleDate: '2026-03-05',
+        quantity: 2500,
+        revenue: 4725,
+        unitCost: null,
+        stock: 4000,
+        sourceRef: 'sale:y',
+      }),
+    ).toEqual({
+      product_name: 'Pão',
+      product_code: null,
+      product_id: 'p',
+      sale_date: '2026-03-05',
+      quantity: '2.500',
+      revenue: '47.25',
+      unit_cost: null,
+      stock: '4.000',
+      source_ref: 'sale:y',
+    })
   })
 })

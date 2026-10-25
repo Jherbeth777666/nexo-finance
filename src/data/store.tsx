@@ -31,6 +31,10 @@ interface StoreValue {
     saveScenario: FinanceRepository['saveScenario']
     deleteScenario: FinanceRepository['deleteScenario']
     requestAnalysis: FinanceRepository['requestAnalysis']
+    listProductSales: FinanceRepository['listProductSales']
+    saveProduct: FinanceRepository['saveProduct']
+    importProductSales: FinanceRepository['importProductSales']
+    saveLocalEvent: FinanceRepository['saveLocalEvent']
     reset: () => Promise<void>
   }
 }
@@ -114,6 +118,22 @@ export function DataProvider({ children, repository }: { children: ReactNode; re
         await refresh()
       },
       requestAnalysis: (agent) => repo.requestAnalysis(agent),
+      listProductSales: (from, to) => repo.listProductSales(from, to),
+      saveProduct: async (input) => {
+        const r = await repo.saveProduct(input)
+        await refresh()
+        return r
+      },
+      importProductSales: async (rows, meta) => {
+        const r = await repo.importProductSales(rows, meta)
+        await refresh()
+        return r
+      },
+      saveLocalEvent: async (input) => {
+        const r = await repo.saveLocalEvent(input)
+        await refresh()
+        return r
+      },
       reset: async () => {
         const data = await repo.reset()
         setStatus({ kind: 'ready', data })

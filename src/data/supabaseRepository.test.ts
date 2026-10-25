@@ -13,6 +13,8 @@ const snapshot = (over: Partial<CompanySnapshot> = {}): CompanySnapshot => ({
   ],
   categories: [],
   transactions: [],
+  products: [],
+  localEvents: [],
   alertStatus: {},
   audit: [],
   imports: [],
