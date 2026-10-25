@@ -14,6 +14,7 @@ Leia primeiro: `README.md` (rotas e estrutura), `docs/ARQUITETURA.md` (decisões
 - Build: `npm run build`
 - CI: `.github/workflows/ci.yml` roda tudo acima, mais npm audit, gitleaks e semgrep
 - Testes de banco (precisam de um projeto Supabase de teste): `npm run test:db`
+- Edge Functions: fonte em `supabase/functions/<nome>/handler.ts`; `npm run functions:deploy` empacota (esbuild) e publica no projeto vinculado
 
 ## Convenções
 

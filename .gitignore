@@ -9,3 +9,6 @@ coverage
 supabase/.temp
 supabase/.branches
 .ai_workspace/
+
+# Edge Functions empacotadas (npm run functions:build)
+supabase/functions/*/index.ts

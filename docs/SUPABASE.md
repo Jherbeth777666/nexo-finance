@@ -72,11 +72,15 @@ Depois: `npm run dev`, crie uma conta em `/cadastro` e confira que a visão gera
 
 ## 6. Edge Function de importação (Fase 4)
 
-A importação de planilhas valida o lote no servidor e chama `import_transactions` com o JWT do usuário:
+A importação de planilhas valida o lote no servidor e chama `import_transactions` com o JWT do usuário.
+
+**Publicar as duas funções** (importação e IA):
 
 ```bash
-npx --yes supabase@2.48.3 functions deploy import-transactions
+npm run functions:deploy
 ```
+
+O código-fonte de cada função fica em `supabase/functions/<nome>/handler.ts`. O empacotador remoto do Supabase só envia arquivos de `supabase/functions/`, então `npm run functions:build` (esbuild, `scripts/build-functions.mjs`) gera um `index.ts` único com o código compartilhado de `src/`; esse arquivo é gerado e fica fora do git. O `functions:deploy` empacota e publica com `--use-api` (não precisa de Docker).
 
 A função exige a variável `ALLOWED_ORIGIN` com a origem exata do app (sem `*`), por exemplo:
 
@@ -87,17 +91,13 @@ Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets s
 
 Limites aplicados no servidor: 30 validações por 10 minutos (`import_validate`, na Edge Function), 10 importações por 10 minutos (`import_transactions`, no banco) e o limite de linhas do plano. Como o limite da importação vive na RPC, chamadas diretas ao PostgREST também são bloqueadas.
 
-**As telas continuam calculando saldos, evolução e projeção no navegador** com o mesmo domínio TypeScript. Os métodos `getAccountBalances`, `getMonthlyEvolution` e `getBaseProjection` já existem no contrato e usam as RPCs no Supabase, mas só devem substituir os cálculos locais depois que a paridade for comprovada no banco de testes.
+**As telas continuam calculando saldos, evolução e projeção no navegador** com o mesmo domínio TypeScript. Os métodos `getAccountBalances`, `getMonthlyEvolution` e `getBaseProjection` já existem no contrato e usam as RPCs no Supabase; a paridade com o domínio foi comprovada no banco de testes (`supabase/tests/aggregates_and_rate_limit.test.ts`). A troca nas telas fica para junto da paginação dos lançamentos, que é quando ela reduz de fato o volume baixado.
 
 ## 7. Edge Function de análise por IA (Fase 5)
 
 As análises são geradas no servidor pela função `ai-analysis`, com dados agregados (saldo, evolução, projeção, totais por categoria e resumo dos cenários). Nenhum lançamento individual, descrição ou contraparte é enviado ao provedor. A resposta passa pelo revisor automático; só análises aprovadas entram no cache.
 
-Deploy:
-
-```bash
-npx --yes supabase@2.48.3 functions deploy ai-analysis
-```
+Deploy: junto com a importação, por `npm run functions:deploy` (seção 6).
 
 Variáveis (Edge Functions → Secrets ou `supabase secrets set`):
 
