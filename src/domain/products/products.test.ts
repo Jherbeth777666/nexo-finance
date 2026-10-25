@@ -143,6 +143,22 @@ describe('mapeamento de planilha de vendas por item', () => {
     expect(rows[2].warnings.join()).toMatch(/Produto novo/)
   })
 
+  it('desmarca receita zero ou negativa e não anuncia produto novo em linha ignorada', () => {
+    const t = toTable([
+      ['Data', 'Produto', 'Quantidade', 'Valor total'],
+      ['20/03/2026', 'Produto desconhecido', '1', '0,00'],
+      ['20/03/2026', 'Produto desconhecido', '1', '-5,00'],
+    ])
+    const r = validateProductSaleRows(t, suggestProductMapping(t.headers), { products: [], existing: [], asOf })
+    expect(r[0].include).toBe(false)
+    expect(r[0].sale).toBeNull()
+    expect(r[0].warnings.join()).toMatch(/zero ou negativo/)
+    expect(r[0].warnings.join()).not.toMatch(/Produto novo/)
+    expect(r[1].include).toBe(false)
+    expect(r[1].warnings.join()).toMatch(/zero ou negativo/)
+    expect(r[1].warnings.join()).not.toMatch(/Produto novo/)
+  })
+
   it('desmarca devoluções e quantidades não positivas com aviso', () => {
     expect(rows[3].include).toBe(false)
     expect(rows[3].warnings.join()).toMatch(/cancelamento ignorado/i)
@@ -250,6 +266,15 @@ describe('análises de produtos', () => {
     expect(stats.find((s) => s.product.id === arroz.id)!.marginPct).toBeCloseTo(33.33, 1)
     expect(resolveUnitCost(carvao, sales)).toBe(800)
     expect(productStats([feijao], sales, '2026-02-01', asOf)[0].margin).toBeNull()
+  })
+
+  it('usa o custo médio apenas das vendas da janela analisada', () => {
+    const janela = product({ id: 'p-janela', name: 'Produto da janela' })
+    const list = [
+      sale({ id: 'j1', productId: janela.id, saleDate: '2026-03-20', quantity: 1000, revenue: 10000, unitCost: 1000 }),
+      sale({ id: 'j2', productId: janela.id, saleDate: '2026-01-01', quantity: 1000, revenue: 10000, unitCost: 5000 }),
+    ]
+    expect(productStats([janela], list, '2026-03-02', asOf)[0].unitCost).toBe(1000)
   })
 
   it('encontra produtos parados e quedas fortes com evidência', () => {
@@ -364,10 +389,12 @@ describe('calendário', () => {
     expect(events.filter((e) => e.name === 'Início do mês (contas e salários)')).toHaveLength(12)
   })
 
-  it('funde eventos locais e não inventa festas da cidade', () => {
-    const local = [{ id: 'l1', name: 'Festejo do padroeiro', startDate: '2026-06-10', endDate: '2026-06-12', kind: 'local' as const, createdAt: '2026-01-01' }]
+  it('funde eventos locais, preserva o tipo escolhido e não inventa festas da cidade', () => {
+    const local = [
+      { id: 'l1', name: 'Festejo do padroeiro', startDate: '2026-06-10', endDate: '2026-06-12', kind: 'regional' as const, createdAt: '2026-01-01' },
+    ]
     const events = calendarEvents('2026-06-01', '2026-06-30', local)
-    expect(events.some((e) => e.name === 'Festejo do padroeiro' && e.source === 'local')).toBe(true)
+    expect(events.some((e) => e.name === 'Festejo do padroeiro' && e.source === 'local' && e.kind === 'regional')).toBe(true)
     expect(events.some((e) => e.name === 'São João (junho no Maranhão)' && e.source === 'fixed')).toBe(true)
     expect(events.every((e) => !/itapecuru/i.test(e.name))).toBe(true)
   })
@@ -412,6 +439,18 @@ describe('oportunidades', () => {
   it('não gera sugestões de sazonalidade sem histórico suficiente', () => {
     const list = generateOpportunities({ products: [arroz], sales: sales.filter((s) => s.saleDate >= '2026-03-25'), asOf })
     expect(list.some((o) => o.kind === 'month_start' || o.kind === 'seasonality')).toBe(false)
+  })
+
+  it('não diz "antes vendia 0" para produto parado há mais de 42 dias', () => {
+    const farinha = product({ id: 'p-farinha', name: "Farinha d'água" })
+    const antigas = [
+      sale({ id: 'f1', productId: farinha.id, saleDate: '2026-01-15', quantity: 5000, revenue: 10000 }),
+      sale({ id: 'f2', productId: farinha.id, saleDate: '2026-01-20', quantity: 5000, revenue: 10000 }),
+    ]
+    const list = generateOpportunities({ products: [farinha], sales: antigas, asOf })
+    const stale = list.find((o) => o.kind === 'stale')!
+    expect(stale.description).toMatch(/última venda foi há \d+ dias/)
+    expect(stale.description).not.toMatch(/antes vendia 0/)
   })
 
   it('descreve sazonalidade em R$ por dia de faturamento', () => {

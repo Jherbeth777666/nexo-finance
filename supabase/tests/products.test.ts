@@ -25,9 +25,11 @@ let admin: SupabaseClient
 let owner: Actor
 let other: Actor
 let rate: Actor
+let hard: Actor
 let company = ''
 let otherCompany = ''
 let rateCompany = ''
+let hardCompany = ''
 
 async function makeUser(label: string): Promise<Actor> {
   const email = `nexo-produtos-${run}-${label}@example.com`
@@ -58,8 +60,8 @@ const saleRow = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-const importArgs = (rows: Record<string, unknown>[]) => ({
-  p_company: company,
+const importArgs = (rows: Record<string, unknown>[], target = company) => ({
+  p_company: target,
   p_file_name: 'vendas.csv',
   p_file_hash: 'a'.repeat(64),
   p_rows: rows,
@@ -69,10 +71,11 @@ const importArgs = (rows: Record<string, unknown>[]) => ({
 describe.skipIf(!configured)('produtos, vendas por item e eventos locais', () => {
   beforeAll(async () => {
     admin = createClient(URL!, SERVICE!, opts)
-    ;[owner, other, rate] = await Promise.all([makeUser('a'), makeUser('b'), makeUser('c')])
+    ;[owner, other, rate, hard] = await Promise.all([makeUser('a'), makeUser('b'), makeUser('c'), makeUser('d')])
     company = await createCompany(owner, `Produtos A ${run}`)
     otherCompany = await createCompany(other, `Produtos B ${run}`)
     rateCompany = await createCompany(rate, `Produtos rate ${run}`)
+    hardCompany = await createCompany(hard, `Produtos hard ${run}`)
   })
 
   it('isola produtos e eventos entre empresas (RLS)', async () => {
@@ -308,6 +311,133 @@ describe.skipIf(!configured)('produtos, vendas por item e eventos locais', () =>
     expect(zero.error?.code).toBe('22023')
   })
 
+  it('recusa lote nulo ou que não seja array depois do limite e da permissão', async () => {
+    const args = importArgs([saleRow()], hardCompany)
+    const nul = await hard.sb.rpc('import_product_sales', { ...args, p_rows: null })
+    expect(nul.error?.code).toBe('22023')
+    const object = await hard.sb.rpc('import_product_sales', { ...args, p_rows: { rows: [] } })
+    expect(object.error?.code).toBe('22023')
+  })
+
+  it('recusa NaN e infinito nos campos numéricos da importação', async () => {
+    const nan = await hard.sb.rpc('import_product_sales', importArgs([saleRow({ quantity: 'NaN' })], hardCompany))
+    expect(nan.error?.code).toBe('22023')
+    const infinite = await hard.sb.rpc('import_product_sales', importArgs([saleRow({ revenue: 'Infinity' })], hardCompany))
+    expect(infinite.error?.code).toBe('22023')
+  })
+
+  it('atualiza o custo apenas quando vazio ou na venda mais recente', async () => {
+    const created = await hard.sb
+      .from('products')
+      .insert({ company_id: hardCompany, name: `Custo ${run}`, code: null, unit: 'un', cost_price: null })
+      .select('id')
+      .single()
+    if (created.error) throw created.error
+    const recente = addDays(today, -1)
+    const primeira = await hard.sb.rpc(
+      'import_product_sales',
+      importArgs(
+        [
+          saleRow({
+            product_name: `Custo ${run}`,
+            product_code: null,
+            sale_date: recente,
+            unit_cost: '30.00',
+            stock: null,
+            source_ref: `teste:${run}:custo-recente`,
+          }),
+          saleRow({
+            product_name: `Custo ${run}`,
+            product_code: null,
+            sale_date: addDays(today, -10),
+            unit_cost: '10.00',
+            stock: null,
+            source_ref: `teste:${run}:custo-antigo`,
+          }),
+        ],
+        hardCompany,
+      ),
+    )
+    expect(primeira.error).toBeNull()
+    const after = await hard.sb.from('products').select('cost_price,cost_updated_at').eq('id', created.data!.id).single()
+    expect(Number(after.data!.cost_price)).toBe(30)
+    expect(after.data!.cost_updated_at).toBe(recente)
+
+    const segunda = await hard.sb.rpc(
+      'import_product_sales',
+      importArgs(
+        [
+          saleRow({
+            product_name: `Custo ${run}`,
+            product_code: null,
+            sale_date: addDays(today, -20),
+            unit_cost: '5.00',
+            stock: null,
+            source_ref: `teste:${run}:custo-mais-antigo`,
+          }),
+        ],
+        hardCompany,
+      ),
+    )
+    expect(segunda.error).toBeNull()
+    const final = await hard.sb.from('products').select('cost_price,cost_updated_at').eq('id', created.data!.id).single()
+    expect(Number(final.data!.cost_price)).toBe(30)
+    expect(final.data!.cost_updated_at).toBe(recente)
+  })
+
+  it('casa o produto pelo código normalizado', async () => {
+    const created = await hard.sb
+      .from('products')
+      .insert({ company_id: hardCompany, name: `Código ${run}`, code: 'AB-1', unit: 'un' })
+      .select('id')
+      .single()
+    if (created.error) throw created.error
+    const sourceRef = `teste:${run}:codigo-normalizado`
+    const result = await hard.sb.rpc(
+      'import_product_sales',
+      importArgs(
+        [saleRow({ product_name: 'Nome diferente do cadastro', product_code: 'ab 1', unit_cost: null, stock: null, source_ref: sourceRef })],
+        hardCompany,
+      ),
+    )
+    expect(result.error).toBeNull()
+    const sale = await hard.sb.from('product_sales').select('product_id').eq('company_id', hardCompany).eq('source_ref', sourceRef).single()
+    expect(sale.data!.product_id).toBe(created.data!.id)
+  })
+
+  it('impede nomes e códigos duplicados pela chave normalizada', async () => {
+    const base = await hard.sb
+      .from('products')
+      .insert({ company_id: hardCompany, name: `Açúcar ${run}`, code: 'XY-9', unit: 'un' })
+      .select('id')
+      .single()
+    if (base.error) throw base.error
+    const nameDup = await hard.sb.from('products').insert({ company_id: hardCompany, name: `  ACUCAR   ${run.toUpperCase()} `, unit: 'un' })
+    expect(nameDup.error?.code).toBe('23505')
+    const codeDup = await hard.sb.from('products').insert({ company_id: hardCompany, name: `Outro ${run}`, code: 'xy 9', unit: 'un' })
+    expect(codeDup.error?.code).toBe('23505')
+  })
+
+  it('força autoria e data do servidor no INSERT de produtos e eventos', async () => {
+    const product = await hard.sb
+      .from('products')
+      .insert({ company_id: hardCompany, name: `Autoria ${run}`, created_by: other.id, created_at: '2000-01-01T00:00:00Z' })
+      .select('created_by,created_at')
+      .single()
+    expect(product.error).toBeNull()
+    expect(product.data!.created_by).toBe(hard.id)
+    expect(new Date(product.data!.created_at).getUTCFullYear()).toBeGreaterThan(2000)
+
+    const event = await hard.sb
+      .from('local_events')
+      .insert({ company_id: hardCompany, name: `Evento ${run}`, start_date: today, created_by: other.id, created_at: '2000-01-01T00:00:00Z' })
+      .select('created_by,created_at')
+      .single()
+    expect(event.error).toBeNull()
+    expect(event.data!.created_by).toBe(hard.id)
+    expect(new Date(event.data!.created_at).getUTCFullYear()).toBeGreaterThan(2000)
+  })
+
   it('limita a importação de produtos a 10 chamadas por 10 minutos', async () => {
     for (let i = 0; i < 10; i++) {
       const r = await rate.sb.rpc('rate_limit_product_import')
@@ -326,8 +456,8 @@ describe.skipIf(!configured)('produtos, vendas por item e eventos locais', () =>
 
 afterAll(async () => {
   if (!admin) return
-  for (const id of [company, otherCompany, rateCompany]) if (id) await admin.from('companies').delete().eq('id', id)
-  for (const id of [owner?.id, other?.id, rate?.id]) if (id) await admin.auth.admin.deleteUser(id)
+  for (const id of [company, otherCompany, rateCompany, hardCompany]) if (id) await admin.from('companies').delete().eq('id', id)
+  for (const id of [owner?.id, other?.id, rate?.id, hard?.id]) if (id) await admin.auth.admin.deleteUser(id)
 })
 
 describe.runIf(!configured)('configuração', () => {

@@ -37,12 +37,18 @@ const qty = (product: Product, value: number) => formatQuantity(value, product.u
 function staleOpportunity(stale: StaleProduct): Opportunity {
   const { product } = stale
   if (stale.reason === 'no_recent_sales') {
+    // Sem vendas na janela anterior também (produto parado há mais de 42 dias), falar em
+    // "antes vendia 0" seria contraditório: usa os dias desde a última venda.
+    const history =
+      stale.previousQuantity > 0
+        ? `antes vendia ${qty(product, stale.previousQuantity)} em 21 dias`
+        : `a última venda foi há ${stale.daysWithoutSale ?? 'mais de 21'} dias`
     return {
       id: `stale:${product.id}`,
       kind: 'stale',
       productId: product.id,
       title: `${product.name} está parado`,
-      description: `${product.name}: 0 vendas nos últimos 21 dias; antes vendia ${qty(product, stale.previousQuantity)} em 21 dias. Pode valer revisar a compra ou o lugar no expositor.`,
+      description: `${product.name}: 0 vendas nos últimos 21 dias; ${history}. Pode valer revisar a compra ou o lugar no expositor.`,
       evidence: [
         { label: 'Última venda', value: stale.lastSaleDate ? `${stale.daysWithoutSale} dias atrás` : 'sem registro' },
         { label: 'Vendas nos 21 dias anteriores', value: qty(product, stale.previousQuantity) },

@@ -93,7 +93,7 @@ export function fixedEvents(year: number): CalendarEvent[] {
 }
 
 function localToCalendar(e: LocalEvent): CalendarEvent {
-  return { id: e.id, name: e.name, startDate: e.startDate, endDate: e.endDate, kind: 'local', source: 'local' }
+  return { id: e.id, name: e.name, startDate: e.startDate, endDate: e.endDate, kind: e.kind, source: 'local' }
 }
 
 /** Eventos fixos do(s) ano(s) do intervalo + eventos locais cadastrados. */

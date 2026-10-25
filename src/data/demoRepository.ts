@@ -17,7 +17,7 @@ import { accountBalances, monthlyEvolution } from '@/domain/finance/metrics'
 import { BASE_SCENARIO, CONSERVATIVE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
 import type { ValidTransaction } from '@/domain/transactions'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
-import { addDays, isISODate, todayIn } from '@/lib/dates'
+import { addDays, isISODate, todayIn, type ISODate } from '@/lib/dates'
 import { assertCents, formatBRL, type Cents } from '@/lib/money'
 import { buildLocalAnalysis } from '@/domain/ai/analysis'
 import type { CategoryTotal } from '@/domain/ai/facts'
@@ -508,7 +508,17 @@ export class DemoRepository implements FinanceRepository {
     const id = uid()
     const now = new Date().toISOString()
     const created: ProductSale[] = []
-    for (const row of rows) {
+    // Espelha cost_updated_at do banco: a data da última venda que informou custo é a referência
+    // para aceitar um novo custo, e o melhor custo do lote vem da venda mais recente (não da
+    // última linha da planilha).
+    const lastCostDateByProduct = new Map<string, ISODate>()
+    for (const sale of s.productSales) {
+      if (sale.unitCost === null) continue
+      const last = lastCostDateByProduct.get(sale.productId)
+      if (!last || sale.saleDate > last) lastCostDateByProduct.set(sale.productId, sale.saleDate)
+    }
+    const bestCost = new Map<string, { date: ISODate; cost: Cents; order: number }>()
+    for (const [order, row] of rows.entries()) {
       if (!row.sourceRef) throw new RepositoryError('Venda sem identificador de origem.')
       if (existingRefs.has(row.sourceRef) || batchRefs.has(row.sourceRef)) {
         throw new RepositoryError('Uma venda com a mesma origem já foi importada.')
@@ -525,7 +535,7 @@ export class DemoRepository implements FinanceRepository {
           name: row.productName.slice(0, 120),
           code: row.productCode,
           unit: 'un',
-          costPrice: row.unitCost,
+          costPrice: null,
           stock: row.stock,
           stockUpdatedAt: row.stock === null ? null : row.saleDate,
           minStock: null,
@@ -538,7 +548,6 @@ export class DemoRepository implements FinanceRepository {
         this.audit({ action: 'create', entity: 'product', entityId: product.id, summary: `Criou "${product.name}" na importação de vendas` })
       } else {
         const updates: Partial<Product> = { updatedAt: now }
-        if (row.unitCost !== null) updates.costPrice = row.unitCost
         if (row.stock !== null && (!product.stockUpdatedAt || row.saleDate >= product.stockUpdatedAt)) {
           updates.stock = row.stock
           updates.stockUpdatedAt = row.saleDate
@@ -562,6 +571,21 @@ export class DemoRepository implements FinanceRepository {
       created.push(sale)
       existingRefs.add(row.sourceRef)
       batchRefs.add(row.sourceRef)
+      if (row.unitCost !== null) {
+        const current = bestCost.get(product.id)
+        if (!current || row.saleDate > current.date || (row.saleDate === current.date && order >= current.order)) {
+          bestCost.set(product.id, { date: row.saleDate, cost: row.unitCost, order })
+        }
+      }
+    }
+    for (const [productId, best] of bestCost) {
+      const product = s.products.find((p) => p.id === productId)
+      if (!product) continue
+      const lastCostDate = lastCostDateByProduct.get(productId)
+      if (product.costPrice === null || !lastCostDate || best.date >= lastCostDate) {
+        product.costPrice = best.cost
+        product.updatedAt = now
+      }
     }
     s.productSales = [...s.productSales, ...created]
     const record = { ...meta, id, at: now, actor: ACTOR }

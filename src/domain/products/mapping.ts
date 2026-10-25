@@ -182,18 +182,15 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
 
     if (cancelled) warnings.push('Devolução/cancelamento ignorado')
     if (quantity !== null && quantity <= 0) warnings.push('Quantidade zero ou negativa: linha ignorada')
-    if (revenue !== null && revenue < 0) warnings.push('Valor negativo (devolução): linha ignorada')
+    if (revenue !== null && revenue <= 0) warnings.push('Valor zero ou negativo (devolução): linha ignorada')
     if (stock !== null && stock < 0) warnings.push('Estoque negativo: será ignorado')
 
     if (cancelled) {
       return { index: i + 2, raw, sale: null, errors: [], warnings, alreadyImported: false, include: false }
     }
 
-    const product = (productCode ? byCode.get(norm(productCode)) : undefined) ?? byName.get(productKey(productName))
-    if (!product && !errors.length) warnings.push('Produto novo: será criado no catálogo')
-
     const invalidQuantity = quantity === null || quantity <= 0
-    const invalidRevenue = revenue === null || revenue < 0
+    const invalidRevenue = revenue === null || revenue <= 0
     if (errors.length || !saleDate || !productName || invalidQuantity || invalidRevenue) {
       return {
         index: i + 2,
@@ -205,6 +202,11 @@ export function validateProductSaleRows(table: RawTable, mapping: ProductColumnM
         include: false,
       }
     }
+
+    // Só avisa sobre produto novo depois de confirmar que a linha será importada; uma linha
+    // ignorada não deve prometer criação no catálogo.
+    const product = (productCode ? byCode.get(norm(productCode)) : undefined) ?? byName.get(productKey(productName))
+    if (!product) warnings.push('Produto novo: será criado no catálogo')
 
     const sale: NewProductSale = {
       productName: productName.slice(0, 120),

@@ -93,7 +93,8 @@ export default function ProductsPage() {
     return () => {
       active = false
     }
-  }, [actions, from, today])
+    // `data.imports`/`data.anchor` mudam após importar ou reiniciar a base: recarrega as vendas.
+  }, [actions, data.anchor, data.imports, from, today])
 
   const derived = useMemo(() => {
     const list = sales ?? []
@@ -207,7 +208,9 @@ export default function ProductsPage() {
                       <p className="mt-1 text-xs text-ink-2">
                         {s.reason === 'sharp_drop'
                           ? `Caiu ${Math.round(Math.abs(s.dropPct ?? 0))}% frente aos 21 dias anteriores.`
-                          : `${s.daysWithoutSale} dias sem vender; antes vendia ${formatQuantity(s.previousQuantity, s.product.unit)} em 21 dias.`}
+                          : s.previousQuantity > 0
+                            ? `${s.daysWithoutSale} dias sem vender; antes vendia ${formatQuantity(s.previousQuantity, s.product.unit)} em 21 dias.`
+                            : `${s.daysWithoutSale} dias sem vender; sem vendas nos 21 dias anteriores.`}
                       </p>
                       <p className="mt-1 text-xs text-ink-3">Última venda: {s.lastSaleDate ? formatDateBR(s.lastSaleDate) : 'sem registro'}</p>
                     </li>

@@ -1,4 +1,5 @@
 import { DemoRepository } from './demoRepository'
+import type { FinanceRepository } from './repository'
 import { validateTransaction, emptyInput } from '@/domain/transactions'
 import { accountBalances } from '@/domain/finance/metrics'
 import { addDays, todayIn } from '@/lib/dates'
@@ -402,6 +403,55 @@ describe('produtos no repositório de demonstração', () => {
         { fileName: 'vendas.csv', fileHash: 'b'.repeat(64), totalRows: 1, imported: 1, skipped: 0, errors: 0, warnings: 0 },
       ),
     ).rejects.toThrow(/mesma origem/)
+  })
+
+  it('grava o custo da venda mais recente do lote, sem regredir em importações antigas', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    const meta = { fileName: 'custos.csv', fileHash: 'd'.repeat(64), totalRows: 2, imported: 2, skipped: 0, errors: 0, warnings: 0 }
+    const importar = (rows: Parameters<FinanceRepository['importProductSales']>[0]) => repo.importProductSales(rows, meta)
+
+    await importar([
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -1),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 3000,
+        stock: null,
+        sourceRef: 'teste:custo:1',
+      },
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -10),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 1000,
+        stock: null,
+        sourceRef: 'teste:custo:2',
+      },
+    ])
+    const criado = (await repo.load()).products.find((p) => p.name === 'Custo mais recente')!
+    expect(criado.costPrice).toBe(3000)
+
+    await importar([
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -20),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 500,
+        stock: null,
+        sourceRef: 'teste:custo:3',
+      },
+    ])
+    expect((await repo.load()).products.find((p) => p.id === criado.id)?.costPrice).toBe(3000)
   })
 
   it('cadastra evento local e rejeita datas inválidas', async () => {

@@ -186,7 +186,7 @@ describe('navegação', () => {
     const today = todayIn()
     const [year, month, day] = today.split('-')
     const csv = `Data,Produto,Código,Quantidade,Valor total
-${day}/${month}/${year},Café Teste,CAFT,2,"37,80"
+${day}/${month}/${year},Café Teste,CAFT,2,"99999,00"
 `
     renderAt('/app/produtos')
     await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
@@ -200,6 +200,9 @@ ${day}/${month}/${year},Café Teste,CAFT,2,"37,80"
     expect(await within(dialog).findByText('1 a importar')).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Importar 1 venda(s)' }))
     expect(await screen.findByText('Vendas por item importadas')).toBeTruthy()
+    // As vendas são recarregadas quando data.imports muda; sem isso o ranking ficaria vazio.
+    const ranking = (await screen.findByText('Ranking por faturamento (30 dias)')).closest('section')!
+    expect(await within(ranking).findByText('Café Teste')).toBeTruthy()
     await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
     expect(await screen.findByText('Café Teste')).toBeTruthy()
   })

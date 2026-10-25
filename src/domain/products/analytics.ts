@@ -50,10 +50,7 @@ export function productStats(products: Product[], sales: ProductSale[], from: IS
     const list = byProduct.get(product.id) ?? []
     const quantity = sumQuantities(list.map((s) => s.quantity))
     const revenue = list.reduce((total, s) => total + s.revenue, 0)
-    const unitCost = resolveUnitCost(
-      product,
-      sales.filter((s) => s.productId === product.id),
-    )
+    const unitCost = resolveUnitCost(product, list)
     const totalCost = unitCost === null ? null : Math.round((quantity * unitCost) / 1000)
     const margin = totalCost === null ? null : revenue - totalCost
     return {
