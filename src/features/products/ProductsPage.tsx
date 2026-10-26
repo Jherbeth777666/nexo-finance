@@ -27,9 +27,9 @@ import { calendarEvents, upcomingEvents } from '@/domain/products/calendar'
 import { generateOpportunities, type Opportunity } from '@/domain/products/opportunities'
 import { IMPORT_LIMITS, ImportFileError, sha256Hex, tableFromCSVBytes, toTable, validateFileMeta, type RawTable } from '@/domain/import/pipeline'
 import { toCSV } from '@/domain/import/csv'
-import { Button, EmptyState, Field, Input, Notice, PageHeader, Panel, Segmented, Select, Tag, cx } from '@/components/ui'
+import { Button, EmptyState, Field, Input, Notice, PageHeader, Panel, Segmented, Select, Skeleton, Tag, cx } from '@/components/ui'
 import { Dialog, useToast } from '@/components/overlay'
-import { Icon } from '@/components/icons'
+import { Icon, type IconName } from '@/components/icons'
 import { downloadFile } from '@/lib/hooks'
 
 type Tab = 'visao' | 'reposicao' | 'sazonalidade' | 'catalogo'
@@ -51,13 +51,18 @@ const STATUS_LABEL: Record<ReplenishmentStatus, { text: string; tone: 'pos' | 'w
   ok: { text: 'Cobertura ok', tone: 'pos' },
   insufficient_data: { text: 'Sem dados', tone: 'neutral' },
 }
-const OPPORTUNITY_LABEL: Record<Opportunity['kind'], string> = {
-  stale: 'Produto parado',
-  drop: 'Queda de vendas',
-  restock: 'Reposição',
-  seasonality: 'Sazonalidade',
-  month_start: 'Início do mês',
+const OPPORTUNITY_STYLE: Record<Opportunity['kind'], { label: string; tone: 'risk' | 'warn' | 'accent'; icon: IconName }> = {
+  stale: { label: 'Produto parado', tone: 'risk', icon: 'alert' },
+  drop: { label: 'Queda de vendas', tone: 'warn', icon: 'alert' },
+  restock: { label: 'Reposição', tone: 'warn', icon: 'products' },
+  seasonality: { label: 'Sazonalidade', tone: 'accent', icon: 'calendar' },
+  month_start: { label: 'Início do mês', tone: 'accent', icon: 'calendar' },
 }
+const OPPORTUNITY_TONE = {
+  risk: { border: 'border-l-risk', seal: 'bg-risk-soft text-risk' },
+  warn: { border: 'border-l-warn', seal: 'bg-warn-soft text-warn' },
+  accent: { border: 'border-l-accent', seal: 'bg-accent-soft text-accent' },
+} as const
 
 export default function ProductsPage() {
   const data = useData()
@@ -117,6 +122,7 @@ export default function ProductsPage() {
   const margin30 = withMargin.reduce((sum, s) => sum + (s.margin ?? 0), 0)
   const reorder = derived.replenishment.filter((r) => r.needsReorder)
   const statsByProduct = new Map(derived.stats30.map((s) => [s.product.id, s]))
+  const tabOptions = TABS.map((t) => (t.value === 'reposicao' && reorder.length > 0 ? { ...t, count: reorder.length } : t))
 
   return (
     <>
@@ -128,7 +134,8 @@ export default function ProductsPage() {
           <>
             <Button
               icon="download"
-              variant="ghost"
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 downloadFile(
                   'modelo-vendas-produtos-nexo.csv',
@@ -142,7 +149,7 @@ export default function ProductsPage() {
             >
               Baixar modelo CSV
             </Button>
-            <Button variant="primary" icon="upload" disabled={viewer} onClick={() => setImportOpen(true)}>
+            <Button variant="primary" icon="upload" disabled={viewer} className="w-full sm:w-auto" onClick={() => setImportOpen(true)}>
               Importar vendas por item
             </Button>
           </>
@@ -150,7 +157,7 @@ export default function ProductsPage() {
       />
 
       <div className="mb-5">
-        <Segmented value={tab} onChange={setTab} options={TABS} label="Seções de produtos" />
+        <Segmented value={tab} onChange={setTab} options={tabOptions} label="Seções de produtos" className="w-full sm:w-auto" />
       </div>
 
       {loadError && (
@@ -162,269 +169,422 @@ export default function ProductsPage() {
         </Notice>
       )}
 
-      {!sales && !loadError && <div className="mb-5 text-sm text-ink-3">Carregando vendas por item…</div>}
-
-      {tab === 'visao' && (
-        <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Produtos cadastrados" value={String(data.products.length)} hint={`${derived.ranking.length} venderam nos últimos 30 dias`} />
-            <Stat label="Receita em 30 dias" value={formatBRL(revenue30)} hint="Soma das vendas por item no período" />
-            <Stat
-              label="Margem estimada em 30 dias"
-              value={withMargin.length ? formatBRL(margin30) : '—'}
-              hint={withMargin.length ? `${withMargin.length} produto(s) com custo informado` : 'Informe o custo dos produtos para calcular'}
-            />
-            <Stat label="Produtos parados" value={String(derived.stale.length)} hint="0 vendas em 21 dias, mas vendiam antes" />
+      {!sales && !loadError && (
+        <div className="mb-5 space-y-5" aria-busy="true">
+          <span className="sr-only">Carregando vendas por item…</span>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-24 rounded-lg sm:h-28" />
+            ))}
           </div>
-
-          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-            <Panel
-              eyebrow="Mais vendidos"
-              title={rankingMetric === 'revenue' ? 'Ranking por faturamento (30 dias)' : 'Ranking por quantidade (30 dias)'}
-              actions={<Segmented value={rankingMetric} onChange={setRankingMetric} options={RANKING_OPTIONS} label="Critério do ranking" size="sm" />}
-            >
-              {derived.ranking.length === 0 ? (
-                <EmptyState
-                  title="Sem vendas por item ainda"
-                  icon="info"
-                  action={viewer ? undefined : <Button onClick={() => setImportOpen(true)}>Importar vendas</Button>}
-                >
-                  Importe a planilha do PDV para ver o ranking dos produtos.
-                </EmptyState>
-              ) : (
-                <RankingTable stats={derived.ranking.slice(0, 8)} />
-              )}
-            </Panel>
-
-            <Panel eyebrow="Atenção" title="Produtos parados e quedas">
-              {derived.stale.length === 0 ? (
-                <p className="text-sm text-ink-2">Nenhum produto parado ou com queda forte na janela recente.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {derived.stale.slice(0, 6).map((s) => (
-                    <li key={s.product.id} className="rounded-md border border-line-soft px-3 py-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium text-ink">{s.product.name}</p>
-                        <Tag tone={s.reason === 'sharp_drop' ? 'warn' : 'risk'}>{s.reason === 'sharp_drop' ? 'Queda' : 'Parado'}</Tag>
-                      </div>
-                      <p className="mt-1 text-xs text-ink-2">
-                        {s.reason === 'sharp_drop'
-                          ? `Caiu ${Math.round(Math.abs(s.dropPct ?? 0))}% frente aos 21 dias anteriores.`
-                          : s.previousQuantity > 0
-                            ? `${s.daysWithoutSale} dias sem vender; antes vendia ${formatQuantity(s.previousQuantity, s.product.unit)} em 21 dias.`
-                            : `${s.daysWithoutSale} dias sem vender; sem vendas nos 21 dias anteriores.`}
-                      </p>
-                      <p className="mt-1 text-xs text-ink-3">Última venda: {s.lastSaleDate ? formatDateBR(s.lastSaleDate) : 'sem registro'}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Panel>
-          </div>
-
-          <Panel eyebrow="Saída baixa" title="Menos vendidos (90 dias)">
-            {derived.leastSold.length === 0 ? (
-              <p className="text-sm text-ink-2">Cadastre produtos para ver quais saem menos.</p>
-            ) : (
-              <ul className="grid gap-3 md:grid-cols-2">
-                {derived.leastSold.slice(0, 6).map((s) => (
-                  <li key={s.product.id} className="rounded-md border border-line-soft px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-ink">{s.product.name}</p>
-                      {s.quantity === 0 ? <Tag tone="risk">Sem venda</Tag> : <Tag tone="neutral">{formatQuantity(s.quantity, s.product.unit)}</Tag>}
-                    </div>
-                    <p className="mt-1 text-xs text-ink-2">
-                      {s.quantity === 0
-                        ? 'Nenhuma venda nos últimos 90 dias.'
-                        : `Vendeu ${formatQuantity(s.quantity, s.product.unit)} e faturou ${formatBRL(s.revenue)} em 90 dias.`}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          <Panel eyebrow="Oportunidades" title="O que pode valer a pena decidir">
-            {derived.opportunities.length === 0 ? (
-              <p className="text-sm text-ink-2">Sem sugestões no momento. Importe mais histórico para ampliar a leitura.</p>
-            ) : (
-              <ul className="grid gap-3 md:grid-cols-2">
-                {derived.opportunities.slice(0, 6).map((o) => (
-                  <li key={o.id} className="rounded-md border border-line-soft px-3 py-3">
-                    <div className="mb-1 flex items-center gap-2">
-                      <Tag tone="accent">{OPPORTUNITY_LABEL[o.kind]}</Tag>
-                      <p className="text-sm font-medium text-ink">{o.title}</p>
-                    </div>
-                    <p className="text-xs leading-relaxed text-ink-2">{o.description}</p>
-                    <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-3">
-                      {o.evidence.map((e) => (
-                        <div key={e.label}>
-                          <dt className="inline">{e.label}: </dt>
-                          <dd className="num inline text-ink-2">{e.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+          <Skeleton className="h-64 rounded-lg" />
         </div>
       )}
 
-      {tab === 'reposicao' && (
-        <div className="space-y-5">
-          <Notice tone="accent" title="Como a reposição é calculada">
-            O estoque informado é ajustado pelas vendas posteriores à data da contagem. A cobertura compara esse saldo com a média diária dos últimos 30 dias e
-            com o prazo do fornecedor. A sugestão é uma referência, não uma ordem de compra.
-          </Notice>
-          <Panel
-            eyebrow="Compras"
-            title={reorder.length ? `${reorder.length} produto(s) pedem atenção` : 'Cobertura de estoque'}
-            actions={<Tag tone={reorder.length ? 'risk' : 'pos'}>{reorder.length ? 'Repor' : 'Sem urgência'}</Tag>}
-          >
-            {derived.replenishment.length === 0 ? (
-              <EmptyState title="Cadastre produtos para calcular a reposição" icon="info" />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead>
-                    <tr className="border-b border-line-soft text-left text-2xs uppercase tracking-wide text-ink-3">
-                      <th className="py-2 pr-3 font-medium">Produto</th>
-                      <th className="py-2 pr-3 font-medium">Estoque estimado</th>
-                      <th className="py-2 pr-3 font-medium">Média/dia</th>
-                      <th className="py-2 pr-3 font-medium">Cobertura</th>
-                      <th className="py-2 pr-3 font-medium">Prazo</th>
-                      <th className="py-2 pr-3 font-medium">Sugestão</th>
-                      <th className="py-2 font-medium">Situação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {derived.replenishment.map((r) => {
-                      const st = STATUS_LABEL[r.status]
+      {sales !== null && (
+        <>
+          {tab === 'visao' && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+                <Stat
+                  label="Produtos"
+                  value={String(data.products.length)}
+                  hint={`${derived.ranking.length} venderam nos últimos 30 dias`}
+                  icon="products"
+                  tone="accent"
+                />
+                <Stat label="Receita 30 dias" value={formatBRL(revenue30)} hint="Vendas por item no período" icon="flow" tone="accent" />
+                <Stat
+                  label="Margem 30 dias"
+                  value={withMargin.length ? formatBRL(margin30) : '—'}
+                  hint={withMargin.length ? `${withMargin.length} produto(s) com custo informado` : 'Informe o custo dos produtos para calcular'}
+                  icon="check"
+                  tone="pos"
+                />
+                <Stat
+                  label="Parados"
+                  value={String(derived.stale.length)}
+                  hint="0 vendas em 21 dias, mas vendiam antes"
+                  icon="alert"
+                  tone={derived.stale.length > 0 ? 'risk' : 'pos'}
+                />
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+                <Panel
+                  eyebrow="Mais vendidos"
+                  title={rankingMetric === 'revenue' ? 'Ranking por faturamento (30 dias)' : 'Ranking por quantidade (30 dias)'}
+                  actions={<Segmented value={rankingMetric} onChange={setRankingMetric} options={RANKING_OPTIONS} label="Critério do ranking" size="sm" />}
+                >
+                  {derived.ranking.length === 0 ? (
+                    <EmptyState
+                      title="Sem vendas por item ainda"
+                      icon="info"
+                      action={viewer ? undefined : <Button onClick={() => setImportOpen(true)}>Importar vendas</Button>}
+                    >
+                      Importe a planilha do PDV para ver o ranking dos produtos.
+                    </EmptyState>
+                  ) : (
+                    <RankingList stats={derived.ranking.slice(0, 8)} metric={rankingMetric} />
+                  )}
+                </Panel>
+
+                <Panel eyebrow="Atenção" title="Produtos parados e quedas">
+                  {derived.stale.length === 0 ? (
+                    <EmptyState title="Nenhum produto parado" icon="check">
+                      Nenhum produto parado ou com queda forte na janela recente.
+                    </EmptyState>
+                  ) : (
+                    <ul className="space-y-3">
+                      {derived.stale.slice(0, 6).map((s) => (
+                        <li key={s.product.id} className="rounded-md border border-line-soft bg-surface-2/40 px-3 py-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium text-ink">{s.product.name}</p>
+                            <Tag tone={s.reason === 'sharp_drop' ? 'warn' : 'risk'}>{s.reason === 'sharp_drop' ? 'Queda' : 'Parado'}</Tag>
+                          </div>
+                          <p className="mt-1 text-xs text-ink-2">
+                            {s.reason === 'sharp_drop'
+                              ? `Caiu ${Math.round(Math.abs(s.dropPct ?? 0))}% frente aos 21 dias anteriores.`
+                              : s.previousQuantity > 0
+                                ? `${s.daysWithoutSale} dias sem vender; antes vendia ${formatQuantity(s.previousQuantity, s.product.unit)} em 21 dias.`
+                                : `${s.daysWithoutSale} dias sem vender; sem vendas nos 21 dias anteriores.`}
+                          </p>
+                          <p className="mt-1 text-xs text-ink-3">Última venda: {s.lastSaleDate ? formatDateBR(s.lastSaleDate) : 'sem registro'}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+              </div>
+
+              <Panel eyebrow="Saída baixa" title="Menos vendidos (90 dias)">
+                {derived.leastSold.length === 0 ? (
+                  <EmptyState title="Cadastre produtos para comparar" icon="products">
+                    Cadastre produtos para ver quais saem menos.
+                  </EmptyState>
+                ) : (
+                  <ul className="grid gap-3 md:grid-cols-2">
+                    {derived.leastSold.slice(0, 6).map((s) => (
+                      <li key={s.product.id} className="rounded-md border border-line-soft bg-surface-2/40 px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={cx(
+                                'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+                                s.quantity === 0 ? 'bg-risk-soft text-risk' : 'bg-surface-3 text-ink-2',
+                              )}
+                            >
+                              <Icon name={s.quantity === 0 ? 'alert' : 'products'} size={15} />
+                            </span>
+                            <p className="truncate text-sm font-medium text-ink">{s.product.name}</p>
+                          </div>
+                          {s.quantity === 0 ? (
+                            <Tag tone="risk">Sem venda</Tag>
+                          ) : (
+                            <span className="num shrink-0 text-sm text-ink-2">{formatBRL(s.revenue)}</span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-ink-2">
+                          {s.quantity === 0 ? 'Nenhuma venda nos últimos 90 dias.' : `${formatQuantity(s.quantity, s.product.unit)} vendidos em 90 dias.`}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+
+              <Panel eyebrow="Oportunidades" title="O que pode valer a pena decidir">
+                {derived.opportunities.length === 0 ? (
+                  <EmptyState title="Sem sugestões no momento" icon="info">
+                    Importe mais histórico para ampliar a leitura.
+                  </EmptyState>
+                ) : (
+                  <ul className="grid gap-3 md:grid-cols-2">
+                    {derived.opportunities.slice(0, 6).map((o) => {
+                      const style = OPPORTUNITY_STYLE[o.kind]
+                      const tone = OPPORTUNITY_TONE[style.tone]
                       return (
-                        <tr key={r.product.id} className="border-b border-line-soft/60 last:border-0">
-                          <td className="py-2.5 pr-3">
-                            <span className="font-medium text-ink">{r.product.name}</span>
-                            <span className="ml-1 text-2xs text-ink-3">{r.product.unit}</span>
-                          </td>
-                          <td className="num py-2.5 pr-3 text-ink-2">{r.stock.estimated === null ? '—' : formatQuantity(r.stock.estimated, r.product.unit)}</td>
-                          <td className="num py-2.5 pr-3 text-ink-2">{r.avgDaily > 0 ? formatQuantity(Math.round(r.avgDaily), r.product.unit) : '0'}</td>
-                          <td className="num py-2.5 pr-3 text-ink-2">{r.coverageDays === null ? '—' : `${Math.floor(r.coverageDays)} dias`}</td>
-                          <td className="num py-2.5 pr-3 text-ink-2">{r.leadTimeDays === null ? '—' : `${r.leadTimeDays} dias`}</td>
-                          <td className="num py-2.5 pr-3 text-ink">{r.suggestedQuantity ? formatQuantity(r.suggestedQuantity, r.product.unit) : '—'}</td>
-                          <td className="py-2.5">
-                            <Tag tone={st.tone}>{st.text}</Tag>
-                          </td>
-                        </tr>
+                        <li key={o.id} className={cx('rounded-md border border-line-soft border-l-2 bg-surface-2/40 px-3 py-3', tone.border)}>
+                          <div className="mb-1 flex items-start gap-2">
+                            <span className={cx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md', tone.seal)}>
+                              <Icon name={style.icon} size={15} />
+                            </span>
+                            <div className="min-w-0">
+                              <Tag tone={style.tone}>{style.label}</Tag>
+                              <p className="mt-1 text-sm font-semibold text-ink">{o.title}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs leading-relaxed text-ink-2">{o.description}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-1.5 text-2xs">
+                            {o.evidence.map((e) => (
+                              <div key={e.label} className="min-w-0 rounded-md bg-surface-2 px-2 py-1">
+                                <dt className="text-ink-3">{e.label}</dt>
+                                <dd className="num text-ink-2">{e.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </li>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
-        </div>
-      )}
-
-      {tab === 'sazonalidade' && (
-        <SeasonalityView
-          seasonality={derived.seasonality}
-          events={derived.events}
-          upcoming={derived.upcoming}
-          opportunities={derived.opportunities}
-          localEvents={data.localEvents}
-          viewer={viewer}
-          today={today}
-          onAddEvent={async (input) => {
-            await actions.saveLocalEvent(input)
-            toast('Evento local cadastrado')
-          }}
-        />
-      )}
-
-      {tab === 'catalogo' && (
-        <Panel
-          eyebrow="Catálogo"
-          title={`${data.products.length} produto(s)`}
-          actions={
-            <Button
-              variant="primary"
-              icon="plus"
-              disabled={viewer}
-              onClick={() => {
-                setEditing(null)
-                setFormOpen(true)
-              }}
-            >
-              Novo produto
-            </Button>
-          }
-        >
-          {data.products.length === 0 ? (
-            <EmptyState
-              title="Nenhum produto cadastrado"
-              icon="info"
-              action={viewer ? undefined : <Button onClick={() => setFormOpen(true)}>Cadastrar produto</Button>}
-            >
-              Cadastre manualmente ou importe uma planilha de vendas por item.
-            </EmptyState>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-soft text-left text-2xs uppercase tracking-wide text-ink-3">
-                    <th className="py-2 pr-3 font-medium">Produto</th>
-                    <th className="py-2 pr-3 font-medium">Estoque</th>
-                    <th className="py-2 pr-3 font-medium">Custo</th>
-                    <th className="py-2 pr-3 font-medium">Receita 30d</th>
-                    <th className="py-2 pr-3 font-medium">Margem 30d</th>
-                    <th className="py-2 pr-3 font-medium">Prazo</th>
-                    <th className="py-2 text-right font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.products.map((p) => {
-                    const stat = statsByProduct.get(p.id)
-                    const stock = derived.replenishment.find((r) => r.product.id === p.id)?.stock
-                    return (
-                      <tr key={p.id} className="border-b border-line-soft/60 last:border-0">
-                        <td className="py-2.5 pr-3">
-                          <span className="font-medium text-ink">{p.name}</span>
-                          {p.code && <span className="ml-1.5 text-2xs text-ink-3">{p.code}</span>}
-                        </td>
-                        <td className="num py-2.5 pr-3 text-ink-2">
-                          {stock?.estimated === null || stock === undefined ? '—' : formatQuantity(stock.estimated, p.unit)}
-                          {stock?.outdated && <Tag tone="warn">desatualizado</Tag>}
-                        </td>
-                        <td className="num py-2.5 pr-3 text-ink-2">{p.costPrice === null ? '—' : formatBRL(p.costPrice)}</td>
-                        <td className="num py-2.5 pr-3 text-ink-2">{stat ? formatBRL(stat.revenue) : formatBRL(0)}</td>
-                        <td className="py-2.5 pr-3">
-                          <MarginCell stat={stat} />
-                        </td>
-                        <td className="num py-2.5 pr-3 text-ink-2">{p.leadTimeDays === null ? '—' : `${p.leadTimeDays} dias`}</td>
-                        <td className="py-2.5 text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon="edit"
-                            disabled={viewer}
-                            onClick={() => {
-                              setEditing(p)
-                              setFormOpen(true)
-                            }}
-                          >
-                            Editar
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                  </ul>
+                )}
+              </Panel>
             </div>
           )}
-        </Panel>
+
+          {tab === 'reposicao' && (
+            <div className="space-y-5">
+              <Notice tone="accent" title="Como a reposição é calculada">
+                O estoque informado é ajustado pelas vendas posteriores à data da contagem. A cobertura compara esse saldo com a média diária dos últimos 30
+                dias e com o prazo do fornecedor. A sugestão é uma referência, não uma ordem de compra.
+              </Notice>
+              <Panel
+                eyebrow="Compras"
+                title={reorder.length ? `${reorder.length} produto(s) pedem atenção` : 'Cobertura de estoque'}
+                actions={<Tag tone={reorder.length ? 'risk' : 'pos'}>{reorder.length ? 'Repor' : 'Sem urgência'}</Tag>}
+              >
+                {derived.replenishment.length === 0 ? (
+                  <EmptyState title="Cadastre produtos para calcular a reposição" icon="info" />
+                ) : (
+                  <>
+                    <ul className="space-y-3 md:hidden">
+                      {derived.replenishment.map((r) => {
+                        const st = STATUS_LABEL[r.status]
+                        return (
+                          <li key={r.product.id} className="rounded-md border border-line-soft bg-surface-2/40 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 text-sm font-medium text-ink">
+                                {r.product.name} <span className="text-2xs text-ink-3">{r.product.unit}</span>
+                              </p>
+                              <Tag tone={st.tone}>{st.text}</Tag>
+                            </div>
+                            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                              <div>
+                                <dt className="text-ink-3">Estoque estimado</dt>
+                                <dd className="num text-ink-2">{r.stock.estimated === null ? '—' : formatQuantity(r.stock.estimated, r.product.unit)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-ink-3">Média/dia</dt>
+                                <dd className="num text-ink-2">{r.avgDaily > 0 ? formatQuantity(Math.round(r.avgDaily), r.product.unit) : '0'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-ink-3">Cobertura</dt>
+                                <dd className="num text-ink-2">{r.coverageDays === null ? '—' : `${Math.floor(r.coverageDays)} dias`}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-ink-3">Prazo</dt>
+                                <dd className="num text-ink-2">{r.leadTimeDays === null ? '—' : `${r.leadTimeDays} dias`}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-ink-3">Sugestão</dt>
+                                <dd className="num text-ink">{r.suggestedQuantity ? formatQuantity(r.suggestedQuantity, r.product.unit) : '—'}</dd>
+                              </div>
+                            </dl>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <div className="hidden overflow-x-auto md:block">
+                      <table aria-label="Sugestões de reposição" className="w-full min-w-[760px] text-sm">
+                        <thead>
+                          <tr className="border-b border-line-soft text-left text-2xs uppercase tracking-wide text-ink-3">
+                            <th className="py-2 pr-3 font-medium">Produto</th>
+                            <th className="py-2 pr-3 font-medium">Estoque estimado</th>
+                            <th className="py-2 pr-3 font-medium">Média/dia</th>
+                            <th className="py-2 pr-3 font-medium">Cobertura</th>
+                            <th className="py-2 pr-3 font-medium">Prazo</th>
+                            <th className="py-2 pr-3 font-medium">Sugestão</th>
+                            <th className="py-2 font-medium">Situação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {derived.replenishment.map((r) => {
+                            const st = STATUS_LABEL[r.status]
+                            return (
+                              <tr key={r.product.id} className="border-b border-line-soft/60 last:border-0">
+                                <td className="py-2.5 pr-3">
+                                  <span className="font-medium text-ink">{r.product.name}</span>
+                                  <span className="ml-1 text-2xs text-ink-3">{r.product.unit}</span>
+                                </td>
+                                <td className="num py-2.5 pr-3 text-ink-2">
+                                  {r.stock.estimated === null ? '—' : formatQuantity(r.stock.estimated, r.product.unit)}
+                                </td>
+                                <td className="num py-2.5 pr-3 text-ink-2">{r.avgDaily > 0 ? formatQuantity(Math.round(r.avgDaily), r.product.unit) : '0'}</td>
+                                <td className="num py-2.5 pr-3 text-ink-2">{r.coverageDays === null ? '—' : `${Math.floor(r.coverageDays)} dias`}</td>
+                                <td className="num py-2.5 pr-3 text-ink-2">{r.leadTimeDays === null ? '—' : `${r.leadTimeDays} dias`}</td>
+                                <td className="num py-2.5 pr-3 text-ink">{r.suggestedQuantity ? formatQuantity(r.suggestedQuantity, r.product.unit) : '—'}</td>
+                                <td className="py-2.5">
+                                  <Tag tone={st.tone}>{st.text}</Tag>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </Panel>
+            </div>
+          )}
+
+          {tab === 'sazonalidade' && (
+            <SeasonalityView
+              seasonality={derived.seasonality}
+              events={derived.events}
+              upcoming={derived.upcoming}
+              opportunities={derived.opportunities}
+              localEvents={data.localEvents}
+              viewer={viewer}
+              today={today}
+              onAddEvent={async (input) => {
+                await actions.saveLocalEvent(input)
+                toast('Evento local cadastrado')
+              }}
+            />
+          )}
+
+          {tab === 'catalogo' && (
+            <Panel
+              eyebrow="Catálogo"
+              title={`${data.products.length} produto(s)`}
+              actions={
+                <Button
+                  variant="primary"
+                  icon="plus"
+                  disabled={viewer}
+                  onClick={() => {
+                    setEditing(null)
+                    setFormOpen(true)
+                  }}
+                >
+                  Novo produto
+                </Button>
+              }
+            >
+              {data.products.length === 0 ? (
+                <EmptyState
+                  title="Nenhum produto cadastrado"
+                  icon="info"
+                  action={viewer ? undefined : <Button onClick={() => setFormOpen(true)}>Cadastrar produto</Button>}
+                >
+                  Cadastre manualmente ou importe uma planilha de vendas por item.
+                </EmptyState>
+              ) : (
+                <>
+                  <ul className="space-y-3 md:hidden">
+                    {data.products.map((p) => {
+                      const stat = statsByProduct.get(p.id)
+                      const stock = derived.replenishment.find((r) => r.product.id === p.id)?.stock
+                      return (
+                        <li key={p.id} className="rounded-md border border-line-soft bg-surface-2/40 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-ink">{p.name}</p>
+                              {p.code && <p className="text-2xs text-ink-3">{p.code}</p>}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon="edit"
+                              disabled={viewer}
+                              onClick={() => {
+                                setEditing(p)
+                                setFormOpen(true)
+                              }}
+                            >
+                              Editar
+                            </Button>
+                          </div>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                            <div>
+                              <dt className="text-ink-3">Estoque</dt>
+                              <dd className="num text-ink-2">
+                                {stock?.estimated === null || stock === undefined ? '—' : formatQuantity(stock.estimated, p.unit)}
+                                {stock?.outdated && <Tag tone="warn">desatualizado</Tag>}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-ink-3">Custo</dt>
+                              <dd className="num text-ink-2">{p.costPrice === null ? '—' : formatBRL(p.costPrice)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-ink-3">Receita 30d</dt>
+                              <dd className="num text-ink-2">{stat ? formatBRL(stat.revenue) : formatBRL(0)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-ink-3">Margem 30d</dt>
+                              <dd>
+                                <MarginCell stat={stat} />
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-ink-3">Prazo</dt>
+                              <dd className="num text-ink-2">{p.leadTimeDays === null ? '—' : `${p.leadTimeDays} dias`}</dd>
+                            </div>
+                          </dl>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <div className="hidden overflow-x-auto md:block">
+                    <table aria-label="Catálogo de produtos" className="w-full min-w-[820px] text-sm">
+                      <thead>
+                        <tr className="border-b border-line-soft text-left text-2xs uppercase tracking-wide text-ink-3">
+                          <th className="py-2 pr-3 font-medium">Produto</th>
+                          <th className="py-2 pr-3 font-medium">Estoque</th>
+                          <th className="py-2 pr-3 font-medium">Custo</th>
+                          <th className="py-2 pr-3 font-medium">Receita 30d</th>
+                          <th className="py-2 pr-3 font-medium">Margem 30d</th>
+                          <th className="py-2 pr-3 font-medium">Prazo</th>
+                          <th className="py-2 text-right font-medium">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.products.map((p) => {
+                          const stat = statsByProduct.get(p.id)
+                          const stock = derived.replenishment.find((r) => r.product.id === p.id)?.stock
+                          return (
+                            <tr key={p.id} className="border-b border-line-soft/60 last:border-0">
+                              <td className="py-2.5 pr-3">
+                                <span className="font-medium text-ink">{p.name}</span>
+                                {p.code && <span className="ml-1.5 text-2xs text-ink-3">{p.code}</span>}
+                              </td>
+                              <td className="num py-2.5 pr-3 text-ink-2">
+                                {stock?.estimated === null || stock === undefined ? '—' : formatQuantity(stock.estimated, p.unit)}
+                                {stock?.outdated && <Tag tone="warn">desatualizado</Tag>}
+                              </td>
+                              <td className="num py-2.5 pr-3 text-ink-2">{p.costPrice === null ? '—' : formatBRL(p.costPrice)}</td>
+                              <td className="num py-2.5 pr-3 text-ink-2">{stat ? formatBRL(stat.revenue) : formatBRL(0)}</td>
+                              <td className="py-2.5 pr-3">
+                                <MarginCell stat={stat} />
+                              </td>
+                              <td className="num py-2.5 pr-3 text-ink-2">{p.leadTimeDays === null ? '—' : `${p.leadTimeDays} dias`}</td>
+                              <td className="py-2.5 text-right">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  icon="edit"
+                                  disabled={viewer}
+                                  onClick={() => {
+                                    setEditing(p)
+                                    setFormOpen(true)
+                                  }}
+                                >
+                                  Editar
+                                </Button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </Panel>
+          )}
+        </>
       )}
 
       {formOpen && (
@@ -460,12 +620,26 @@ export default function ProductsPage() {
   )
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
+const STAT_TONES = {
+  accent: { seal: 'bg-accent-soft text-accent', rule: 'bg-accent' },
+  pos: { seal: 'bg-pos-soft text-pos', rule: 'bg-pos' },
+  warn: { seal: 'bg-warn-soft text-warn', rule: 'bg-warn' },
+  risk: { seal: 'bg-risk-soft text-risk', rule: 'bg-risk' },
+} as const
+
+function Stat({ label, value, hint, icon, tone = 'accent' }: { label: string; value: string; hint: string; icon: IconName; tone?: keyof typeof STAT_TONES }) {
+  const t = STAT_TONES[tone]
   return (
-    <div className="rounded-lg border border-line-soft bg-surface px-4 py-3">
-      <p className="text-2xs uppercase tracking-wide text-ink-3">{label}</p>
-      <p className="num mt-1 text-xl font-semibold text-ink">{value}</p>
-      <p className="mt-0.5 text-xs text-ink-3">{hint}</p>
+    <div className="relative min-w-0 rounded-lg border border-line-soft bg-surface bg-gradient-to-b from-white/[0.02] to-transparent p-3.5 shadow-card sm:p-4">
+      <span className={cx('absolute inset-x-4 top-0 h-px rounded-full', t.rule)} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-2xs uppercase tracking-wide text-ink-3">{label}</p>
+        <span className={cx('inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md', t.seal)}>
+          <Icon name={icon} size={16} />
+        </span>
+      </div>
+      <p className="num mt-2 text-xl font-semibold tracking-tight break-words text-ink [overflow-wrap:anywhere] sm:text-2xl">{value}</p>
+      <p className="mt-0.5 text-xs leading-snug text-ink-3">{hint}</p>
     </div>
   )
 }
@@ -479,34 +653,60 @@ function MarginCell({ stat }: { stat: ProductStat | undefined }) {
   )
 }
 
-function RankingTable({ stats }: { stats: ProductStat[] }) {
+function MarginChip({ stat }: { stat: ProductStat }) {
+  if (stat.margin === null) return <Tag tone="neutral">sem custo</Tag>
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-sm">
-        <thead>
-          <tr className="border-b border-line-soft text-left text-2xs uppercase tracking-wide text-ink-3">
-            <th className="py-2 pr-3 font-medium">#</th>
-            <th className="py-2 pr-3 font-medium">Produto</th>
-            <th className="py-2 pr-3 font-medium">Quantidade</th>
-            <th className="py-2 pr-3 font-medium">Receita</th>
-            <th className="py-2 font-medium">Margem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats.map((s, i) => (
-            <tr key={s.product.id} className="border-b border-line-soft/60 last:border-0">
-              <td className="num py-2.5 pr-3 text-ink-3">{i + 1}</td>
-              <td className="py-2.5 pr-3 font-medium text-ink">{s.product.name}</td>
-              <td className="num py-2.5 pr-3 text-ink-2">{formatQuantity(s.quantity, s.product.unit)}</td>
-              <td className="num py-2.5 pr-3 text-ink-2">{formatBRL(s.revenue)}</td>
-              <td className="py-2.5">
-                <MarginCell stat={s} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Tag tone={stat.margin >= 0 ? 'pos' : 'risk'}>
+      Margem {formatBRL(stat.margin)} · {Math.round(stat.marginPct ?? 0)}%
+    </Tag>
+  )
+}
+
+const RANK_STYLES = [
+  'bg-warn/15 text-warn ring-warn/30',
+  'bg-[#cbd5e1]/15 text-[#cbd5e1] ring-[#cbd5e1]/30',
+  'bg-[#d97706]/15 text-[#d97706] ring-[#d97706]/30',
+]
+
+function RankingList({ stats, metric }: { stats: ProductStat[]; metric: RankingMetric }) {
+  const max = Math.max(1, ...stats.map((s) => (metric === 'revenue' ? s.revenue : s.quantity)))
+  return (
+    <ol className="space-y-2">
+      {stats.map((s, i) => {
+        const value = metric === 'revenue' ? s.revenue : s.quantity
+        const pct = Math.max(2, Math.round((value / max) * 100))
+        return (
+          <li key={s.product.id} className="rounded-md border border-line-soft bg-surface-2/40 px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={cx(
+                  'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold ring-1',
+                  i < 3 ? RANK_STYLES[i] : 'text-ink-3 ring-transparent',
+                )}
+                aria-label={`${i + 1}º lugar`}
+              >
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate text-sm font-medium text-ink">{s.product.name}</p>
+                  <p className="num shrink-0 text-sm text-ink-2">{formatBRL(s.revenue)}</p>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <p className="text-xs text-ink-3">
+                    Quantidade <span className="num text-ink-2">{formatQuantity(s.quantity, s.product.unit)}</span>
+                  </p>
+                  <MarginChip stat={s} />
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-accent/20" aria-hidden="true">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            </div>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 

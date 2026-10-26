@@ -7,6 +7,7 @@ import { DemoRepository } from '@/data/demoRepository'
 import { DataProvider, useStore } from '@/data/store'
 import type { FinanceRepository } from '@/data/repository'
 import { ToastProvider } from '@/components/overlay'
+import { Segmented } from '@/components/ui'
 import { AuthProvider } from '@/features/auth/session'
 import SettingsPage from '@/features/settings/SettingsPage'
 import IntelligencePage from '@/features/intelligence/IntelligencePage'
@@ -149,7 +150,8 @@ describe('navegação', () => {
     expect((await screen.findAllByText('Arroz branco 5 kg')).length).toBeGreaterThan(0)
 
     await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
-    const row = (await screen.findByText('Arroz branco 5 kg')).closest('tr')!
+    const catalog = await screen.findByRole('table', { name: 'Catálogo de produtos' })
+    const row = within(catalog).getByText('Arroz branco 5 kg').closest('tr')!
     await user.click(within(row).getByRole('button', { name: 'Editar' }))
     const dialog = await screen.findByRole('dialog')
     const name = within(dialog).getByLabelText('Nome')
@@ -157,7 +159,7 @@ describe('navegação', () => {
     await user.type(name, 'Arroz premium 5 kg')
     await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
     expect(await screen.findByText('Produto atualizado')).toBeTruthy()
-    expect(await screen.findByText('Arroz premium 5 kg')).toBeTruthy()
+    expect((await screen.findAllByText('Arroz premium 5 kg')).length).toBeGreaterThan(0)
   })
 
   it('produtos: mostra os menos vendidos e alterna o ranking por faturamento e quantidade', async () => {
@@ -204,7 +206,8 @@ ${day}/${month}/${year},Café Teste,CAFT,2,"99999,00"
     const ranking = (await screen.findByText('Ranking por faturamento (30 dias)')).closest('section')!
     expect(await within(ranking).findByText('Café Teste')).toBeTruthy()
     await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
-    expect(await screen.findByText('Café Teste')).toBeTruthy()
+    const catalog = await screen.findByRole('table', { name: 'Catálogo de produtos' })
+    expect(await within(catalog).findByText('Café Teste')).toBeTruthy()
   })
 
   it('produtos: ao mudar o estoque, data da contagem vira hoje e data futura é barrada', async () => {
@@ -213,7 +216,8 @@ ${day}/${month}/${year},Café Teste,CAFT,2,"99999,00"
     renderAt('/app/produtos')
     await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
     await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
-    const row = (await screen.findByText('Arroz branco 5 kg')).closest('tr')!
+    const catalog = await screen.findByRole('table', { name: 'Catálogo de produtos' })
+    const row = within(catalog).getByText('Arroz branco 5 kg').closest('tr')!
     await user.click(within(row).getByRole('button', { name: 'Editar' }))
     const dialog = await screen.findByRole('dialog')
     const stock = within(dialog).getByLabelText('Estoque atual')
@@ -275,6 +279,40 @@ ${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
     await user.click(screen.getByRole('button', { name: 'Adicionar evento' }))
     expect(await screen.findByText('Evento local cadastrado')).toBeTruthy()
     expect(await screen.findByText(/Festejo do padroeiro ·/)).toBeTruthy()
+  })
+
+  it('produtos: repõe com rótulos acessíveis nos cartões e na tabela', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    const tab = await screen.findByRole('radio', { name: 'Reposição' })
+    await user.click(tab)
+    const heading = await screen.findByRole('heading', { name: /(Cobertura de estoque|pedem atenção)/ })
+    const panel = heading.closest('section')!
+    expect(within(panel).getByRole('table', { name: 'Sugestões de reposição' })).toBeTruthy()
+    expect(within(panel).getAllByText('Estoque estimado').length).toBeGreaterThan(0)
+    expect(within(panel).getAllByText('Cobertura').length).toBeGreaterThan(0)
+  })
+
+  it('controle segmentado mantém o nome acessível e mostra o contador', () => {
+    const onChange = vi.fn()
+    render(
+      <Segmented
+        label="Seções"
+        value="visao"
+        onChange={onChange}
+        options={[
+          { value: 'visao', label: 'Visão' },
+          { value: 'reposicao', label: 'Reposição', count: 3 },
+        ]}
+      />,
+    )
+    const group = screen.getByRole('radiogroup', { name: 'Seções' })
+    expect(group.className).toContain('overflow-x-auto')
+    const reposicao = screen.getByRole('radio', { name: 'Reposição' })
+    expect(reposicao.textContent).toContain('3')
+    fireEvent.click(reposicao)
+    expect(onChange).toHaveBeenCalledWith('reposicao')
   })
 
   it('inteligência em demonstração mostra exemplo local sem chamar IA', async () => {
