@@ -82,10 +82,10 @@ npm run functions:deploy
 
 O código-fonte de cada função fica em `supabase/functions/<nome>/handler.ts`. O empacotador remoto do Supabase só envia arquivos de `supabase/functions/`, então `npm run functions:build` (esbuild, `scripts/build-functions.mjs`) gera um `index.ts` único com o código compartilhado de `src/`; esse arquivo é gerado e fica fora do git. O `functions:deploy` empacota e publica com `--use-api` (não precisa de Docker).
 
-A função exige a variável `ALLOWED_ORIGIN` com a origem exata do app (sem `*`), por exemplo:
+As duas funções exigem a variável `ALLOWED_ORIGIN` com as origens exatas do app, separadas por vírgula (sem `*`). Espaços e barra final são ignorados; a comparação com o header `Origin` é por igualdade exata, e a resposta devolve em `Access-Control-Allow-Origin` só a origem que bateu (com `Vary: Origin`). Lista vazia ou ausente: a função recusa tudo (falha fechada). Exemplos:
 
 - produção: `ALLOWED_ORIGIN=https://SEU-SITE.netlify.app`
-- desenvolvimento: `ALLOWED_ORIGIN=http://localhost:5173`
+- teste (local + site de teste): `ALLOWED_ORIGIN=http://localhost:5173,https://zippy-biscuit-ebc7d7.netlify.app`
 
 Configure no painel (Edge Functions → Secrets) ou via CLI (`supabase secrets set ALLOWED_ORIGIN=...`). Para rodar localmente, gere antes o pacote (`npm run functions:build`; o `index.ts` não vem no clone) e depois: `supabase functions serve import-transactions --env-file .env.local`, com `ALLOWED_ORIGIN` e as variáveis do Supabase no arquivo local.
 
@@ -101,12 +101,12 @@ Deploy: junto com a importação, por `npm run functions:deploy` (seção 6).
 
 Variáveis (Edge Functions → Secrets ou `supabase secrets set`):
 
-| Variável         | Obrigatória  | Observação                                                                            |
-| ---------------- | ------------ | ------------------------------------------------------------------------------------- |
-| `ALLOWED_ORIGIN` | sim          | Origem exata do app, sem `*` (ex.: `https://SEU-SITE.netlify.app`).                   |
-| `AI_PROVIDER`    | não          | `none` (padrão), `gemini` ou `fake`. Sem provedor válido a função responde 503.       |
-| `AI_MODEL`       | com `gemini` | Modelo exato, sem valor padrão que gere custo (ex.: `gemini-2.0-flash`).              |
-| `AI_API_KEY`     | com `gemini` | Segredo preenchido por você no painel; vai no header `x-goog-api-key` e nunca na URL. |
+| Variável         | Obrigatória  | Observação                                                                                   |
+| ---------------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `ALLOWED_ORIGIN` | sim          | Origens exatas do app, separadas por vírgula, sem `*` (ex.: `https://SEU-SITE.netlify.app`). |
+| `AI_PROVIDER`    | não          | `none` (padrão), `gemini` ou `fake`. Sem provedor válido a função responde 503.              |
+| `AI_MODEL`       | com `gemini` | Modelo exato, sem valor padrão que gere custo (ex.: `gemini-2.0-flash`).                     |
+| `AI_API_KEY`     | com `gemini` | Segredo preenchido por você no painel; vai no header `x-goog-api-key` e nunca na URL.        |
 
 A cota mensal vem de `plan_limits.ai_monthly_analyses`. O plano **trial é 0**: mesmo com o provedor configurado, nenhuma análise é chamada até a cota ser aumentada conscientemente no banco. `ai_quota_reserve` reserva a vaga na mesma transação da checagem e conta todas as chamadas ao provedor no mês (pendentes, aprovadas, reprovadas pelo revisor e erros); acertos de cache não contam. O limite por usuário é de 10 chamadas a cada 10 minutos (`rate_limit_ai`).
 
