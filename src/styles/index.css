@@ -3,35 +3,37 @@
 /*
  * Nexo Finance — tokens visuais.
  * Cor comunica significado: verde = resultado positivo, âmbar = atenção, vermelho = risco,
- * azul acinzentado = interação/neutro. Nada de cor decorativa.
+ * azul de marca = interação/neutro. Nada de cor decorativa.
  */
 @theme {
-  --color-bg: #101319;
-  --color-surface: #171d27;
-  --color-surface-2: #1d2531;
-  --color-surface-3: #242d3b;
-  --color-line: #303947;
-  --color-line-soft: #232b37;
-  --color-ink: #f1f4f8;
-  --color-ink-2: #a4afbf;
-  --color-ink-3: #7f8a9b;
-  --color-pos: #57d6a0;
-  --color-pos-soft: #57d6a01a;
-  --color-warn: #f0b95a;
-  --color-warn-soft: #f0b95a1a;
-  --color-risk: #f07878;
-  --color-risk-soft: #f078781f;
-  --color-accent: #93a8c9;
-  --color-accent-soft: #93a8c91f;
+  --color-bg: #0b0f17;
+  --color-surface: #121824;
+  --color-surface-2: #192231;
+  --color-surface-3: #222d40;
+  --color-line: #2e3b52;
+  --color-line-soft: #1f293a;
+  --color-ink: #f3f6fc;
+  --color-ink-2: #b8c4d9;
+  --color-ink-3: #94a3b8;
+  --color-pos: #34d399;
+  --color-pos-soft: #34d3991a;
+  --color-warn: #fbbf24;
+  --color-warn-soft: #fbbf241a;
+  --color-risk: #f87171;
+  --color-risk-soft: #f871711f;
+  --color-accent: #38bdf8;
+  --color-accent-soft: #38bdf81f;
+  --color-accent-strong: #0284c7;
 
   --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, monospace;
 
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 4px 12px -2px rgb(0 0 0 / 0.45);
 }
 
 @layer base {
@@ -45,7 +47,8 @@
     text-rendering: optimizeLegibility;
   }
   ::selection {
-    background: #93a8c955;
+    background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+    color: var(--color-ink);
   }
   :focus-visible {
     outline: 2px solid var(--color-accent);

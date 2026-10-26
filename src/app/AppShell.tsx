@@ -115,7 +115,7 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
       </a>
 
       {/* Navegação lateral (desktop) */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-line-soft bg-[#0d1015] lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-line-soft bg-surface lg:flex">
         <SidebarContent onExitDemo={onExitDemo} />
       </aside>
 
@@ -123,7 +123,7 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
       {drawer && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <button className="absolute inset-0 bg-black/60" aria-label="Fechar menu" onClick={() => setDrawer(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line-soft bg-[#0d1015]">
+          <aside className="absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line-soft bg-surface shadow-2xl shadow-black/50">
             <SidebarContent onClose={() => setDrawer(false)} onExitDemo={onExitDemo} />
           </aside>
         </div>
@@ -195,16 +195,23 @@ function Shell({ onExitDemo }: { onExitDemo?: () => void }) {
       {/* Barra inferior (móvel) */}
       <nav
         aria-label="Navegação principal"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-[#0d1015]/95 backdrop-blur-sm lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line-soft bg-surface/95 backdrop-blur-sm lg:hidden"
       >
         {NAV.slice(0, 4).map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
-            className={({ isActive }) => cx('flex flex-col items-center gap-1 py-2.5 text-[10.5px]', isActive ? 'text-ink' : 'text-ink-3')}
+            className={({ isActive }) =>
+              cx('relative flex flex-col items-center gap-1 py-2.5 text-[10.5px]', isActive ? 'font-medium text-accent' : 'text-ink-3')
+            }
           >
-            <Icon name={n.icon} size={19} />
-            {n.short}
+            {({ isActive }) => (
+              <>
+                {isActive && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-accent" aria-hidden="true" />}
+                <Icon name={n.icon} size={19} />
+                {n.short}
+              </>
+            )}
           </NavLink>
         ))}
         <button onClick={() => setDrawer(true)} className="flex flex-col items-center gap-1 py-2.5 text-[10.5px] text-ink-3">
@@ -249,8 +256,8 @@ function SidebarContent({ onClose, onExitDemo }: { onClose?: () => void; onExitD
               >
                 {({ isActive }) => (
                   <>
-                    {isActive && <span className="absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-ink" />}
-                    <Icon name={n.icon} className={isActive ? 'text-ink' : 'text-ink-3 group-hover:text-ink-2'} />
+                    {isActive && <span className="absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-accent" />}
+                    <Icon name={n.icon} className={isActive ? 'text-accent' : 'text-ink-3 group-hover:text-ink-2'} />
                     {n.label}
                   </>
                 )}

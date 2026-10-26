@@ -18,12 +18,12 @@ export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Bool
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 const variants: Record<Variant, string> = {
-  primary: 'bg-ink text-bg hover:bg-white font-semibold',
+  primary: 'bg-accent text-bg font-semibold hover:bg-accent/90 hover:brightness-110 max-sm:min-h-11',
   secondary: 'border border-line bg-surface-2 text-ink hover:border-ink-3/70 hover:bg-surface-3',
   ghost: 'text-ink-2 hover:text-ink hover:bg-surface-2',
   danger: 'bg-risk/90 text-bg hover:bg-risk font-semibold',
 }
-const sizes = { sm: 'h-8 px-3 text-xs gap-1.5', md: 'h-9 px-3.5 text-sm gap-2' }
+const sizes = { sm: 'min-h-9 px-3 text-xs gap-1.5', md: 'min-h-10 px-3.5 text-sm gap-2' }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
@@ -40,7 +40,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cx(
-        'inline-flex items-center justify-center rounded-md whitespace-nowrap transition-colors disabled:opacity-50',
+        'inline-flex items-center justify-center rounded-md whitespace-nowrap transition-colors active:scale-[0.99] disabled:opacity-50',
         variants[variant],
         sizes[size],
         className,
@@ -65,7 +65,12 @@ export function ButtonLink({
 }: LinkProps & { variant?: Variant; size?: keyof typeof sizes; icon?: IconName }) {
   return (
     <Link
-      className={cx('inline-flex items-center justify-center rounded-md whitespace-nowrap transition-colors', variants[variant], sizes[size], className)}
+      className={cx(
+        'inline-flex items-center justify-center rounded-md whitespace-nowrap transition-colors active:scale-[0.99]',
+        variants[variant],
+        sizes[size],
+        className,
+      )}
       {...rest}
     >
       {icon && <Icon name={icon} size={size === 'sm' ? 14 : 16} />}
@@ -142,21 +147,25 @@ export function Panel({
 }) {
   const headingId = useId()
   return (
-    <section id={id} aria-labelledby={title ? headingId : undefined} className={cx('rounded-lg border border-line-soft bg-surface', className)}>
+    <section
+      id={id}
+      aria-labelledby={title ? headingId : undefined}
+      className={cx('rounded-lg border border-line-soft bg-surface bg-gradient-to-b from-white/[0.02] to-transparent shadow-card', className)}
+    >
       {(title || eyebrow || actions) && (
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft px-4 py-3 sm:px-5">
           <div className="min-w-0">
             {eyebrow && <p className="eyebrow mb-0.5">{eyebrow}</p>}
             {title && (
-              <h2 id={headingId} className="text-sm font-semibold text-ink">
+              <h2 id={headingId} className="text-base font-semibold text-ink">
                 {title}
               </h2>
             )}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex min-w-0 items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={cx('px-4 py-4 sm:px-5', bodyClassName)}>{children}</div>
+      <div className={cx('p-4 sm:p-5', bodyClassName)}>{children}</div>
     </section>
   )
 }
@@ -312,15 +321,21 @@ export function Segmented<T extends string | number>({
   options,
   label,
   size = 'md',
+  className,
 }: {
   value: T
   onChange: (v: T) => void
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; count?: number }[]
   label: string
   size?: 'sm' | 'md'
+  className?: string
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-md border border-line bg-surface-2 p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className={cx('inline-flex max-w-full overflow-x-auto rounded-md border border-line bg-surface-2 p-0.5', className)}
+    >
       {options.map((o) => {
         const active = o.value === value
         return (
@@ -328,6 +343,7 @@ export function Segmented<T extends string | number>({
             key={String(o.value)}
             type="button"
             role="radio"
+            aria-label={o.count ? `${o.label} (${o.count})` : o.label}
             aria-checked={active}
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => {
@@ -340,12 +356,22 @@ export function Segmented<T extends string | number>({
             }}
             tabIndex={active ? 0 : -1}
             className={cx(
-              'rounded-[5px] font-medium transition-colors',
-              size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-xs sm:text-sm',
-              active ? 'bg-surface-3 text-ink shadow-sm shadow-black/30' : 'text-ink-3 hover:text-ink',
+              'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border font-medium whitespace-nowrap transition-colors focus-visible:outline-offset-0',
+              size === 'sm' ? 'min-h-7 px-2 py-1 text-xs' : 'min-h-9 px-3 py-1.5 text-xs sm:text-sm',
+              active ? 'border-line/80 bg-surface-3 text-ink shadow-sm shadow-black/30' : 'border-transparent text-ink-3 hover:text-ink',
             )}
           >
             {o.label}
+            {o.count ? (
+              <span
+                className={cx(
+                  'inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-4 font-semibold',
+                  active ? 'bg-accent/15 text-accent' : 'bg-surface-3 text-ink-2',
+                )}
+              >
+                {o.count}
+              </span>
+            ) : null}
           </button>
         )
       })}

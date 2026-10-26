@@ -121,7 +121,7 @@ export function ProjectionChart({
               x2={W - pad.right}
               y1={geo.y(t)}
               y2={geo.y(t)}
-              stroke={t === 0 ? '#5a6577' : '#232b37'}
+              stroke={t === 0 ? 'var(--color-line)' : 'var(--color-line-soft)'}
               strokeDasharray={t === 0 ? undefined : '2 4'}
             />
             <text x={pad.left - 8} y={geo.y(t)} dy="0.32em" textAnchor="end" className="num fill-ink-3 text-[10.5px]">
@@ -131,25 +131,33 @@ export function ProjectionChart({
         ))}
         {safetyLine ? (
           <g>
-            <line x1={pad.left} x2={W - pad.right} y1={geo.y(safetyLine)} y2={geo.y(safetyLine)} stroke="#f0b95a" strokeOpacity={0.5} strokeDasharray="6 4" />
+            <line
+              x1={pad.left}
+              x2={W - pad.right}
+              y1={geo.y(safetyLine)}
+              y2={geo.y(safetyLine)}
+              stroke="var(--color-warn)"
+              strokeOpacity={0.5}
+              strokeDasharray="6 4"
+            />
             <text x={W - pad.right} y={geo.y(safetyLine) - 5} textAnchor="end" className="fill-warn text-[10px]">
               margem de segurança
             </text>
           </g>
         ) : null}
-        <path d={area} fill="#93a8c9" fillOpacity={0.08} clipPath={`url(#${clipId}-above)`} />
-        <path d={area} fill="#f07878" fillOpacity={0.14} clipPath={`url(#${clipId}-below)`} />
-        {geo.comparePath && <path d={geo.comparePath} fill="none" stroke="#7f8a9b" strokeWidth={1.5} strokeDasharray="4 4" />}
-        <path d={geo.path} fill="none" stroke="#c9d5e8" strokeWidth={1.8} clipPath={`url(#${clipId}-above)`} />
-        <path d={geo.path} fill="none" stroke="#f07878" strokeWidth={2} clipPath={`url(#${clipId}-below)`} />
+        <path d={area} fill="var(--color-accent)" fillOpacity={0.08} clipPath={`url(#${clipId}-above)`} />
+        <path d={area} fill="var(--color-risk)" fillOpacity={0.14} clipPath={`url(#${clipId}-below)`} />
+        {geo.comparePath && <path d={geo.comparePath} fill="none" stroke="var(--color-ink-3)" strokeWidth={1.5} strokeDasharray="4 4" />}
+        <path d={geo.path} fill="none" stroke="var(--color-ink-2)" strokeWidth={1.8} clipPath={`url(#${clipId}-above)`} />
+        <path d={geo.path} fill="none" stroke="var(--color-risk)" strokeWidth={2} clipPath={`url(#${clipId}-below)`} />
         {hi >= 0 && (
           <g>
             <circle
               cx={geo.x(hi)}
               cy={geo.y(points[hi].balance)}
               r={4}
-              fill="#101319"
-              stroke={points[hi].balance < 0 ? '#f07878' : '#f0b95a'}
+              fill="var(--color-bg)"
+              stroke={points[hi].balance < 0 ? 'var(--color-risk)' : 'var(--color-warn)'}
               strokeWidth={2}
             />
           </g>
@@ -167,9 +175,9 @@ export function ProjectionChart({
         ))}
         {hover !== null && (
           <g pointerEvents="none">
-            <line x1={geo.x(hover)} x2={geo.x(hover)} y1={pad.top} y2={pad.top + innerH} stroke="#a4afbf" strokeOpacity={0.35} />
-            <circle cx={geo.x(hover)} cy={geo.y(points[hover].balance)} r={3.5} fill="#f1f4f8" />
-            {compare?.[hover] && <circle cx={geo.x(hover)} cy={geo.y(compare[hover].balance)} r={3} fill="#7f8a9b" />}
+            <line x1={geo.x(hover)} x2={geo.x(hover)} y1={pad.top} y2={pad.top + innerH} stroke="var(--color-ink-2)" strokeOpacity={0.35} />
+            <circle cx={geo.x(hover)} cy={geo.y(points[hover].balance)} r={3.5} fill="var(--color-ink)" />
+            {compare?.[hover] && <circle cx={geo.x(hover)} cy={geo.y(compare[hover].balance)} r={3} fill="var(--color-ink-3)" />}
           </g>
         )}
       </svg>
@@ -215,15 +223,15 @@ export function MonthlyBars({ data, height = 168 }: { data: { month: string; cas
   return (
     <div ref={ref} className="relative w-full">
       <svg width={W} height={height} role="img" aria-label={`Entradas e saídas por mês. ${label}`} className="block">
-        <line x1={pad.left} x2={W - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="#303947" />
+        <line x1={pad.left} x2={W - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="var(--color-line)" />
         {data.map((d, i) => {
           const cx = pad.left + group * i + group / 2
           const active = hover === i
           return (
             <g key={d.month} onPointerEnter={() => setHover(i)} onPointerLeave={() => setHover(null)}>
-              <rect x={pad.left + group * i} y={pad.top} width={group} height={innerH} fill={active ? '#1d2531' : 'transparent'} />
-              <rect x={cx - bw - 1.5} y={y(d.cashIn)} width={bw} height={pad.top + innerH - y(d.cashIn)} rx={2} fill="#57d6a0" fillOpacity={0.75} />
-              <rect x={cx + 1.5} y={y(d.cashOut)} width={bw} height={pad.top + innerH - y(d.cashOut)} rx={2} fill="#93a8c9" fillOpacity={0.55} />
+              <rect x={pad.left + group * i} y={pad.top} width={group} height={innerH} fill={active ? 'var(--color-surface-2)' : 'transparent'} />
+              <rect x={cx - bw - 1.5} y={y(d.cashIn)} width={bw} height={pad.top + innerH - y(d.cashIn)} rx={2} fill="var(--color-pos)" fillOpacity={0.75} />
+              <rect x={cx + 1.5} y={y(d.cashOut)} width={bw} height={pad.top + innerH - y(d.cashOut)} rx={2} fill="var(--color-accent)" fillOpacity={0.55} />
               <text x={cx} y={height - 6} textAnchor="middle" className={`text-[10.5px] ${active ? 'fill-ink' : 'fill-ink-3'}`}>
                 {formatMonthLabel(d.month)}
               </text>
