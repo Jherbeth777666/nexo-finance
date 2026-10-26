@@ -415,6 +415,60 @@ describe('segundo passe visual', () => {
     expect(valueClassFor('A pagar')).toContain('text-risk')
   })
 
+  it('visão geral: estrutura a evolução em uma lista descritiva válida', async () => {
+    renderAt('/app/overview')
+    await screen.findByRole('heading', { name: 'Situação financeira' }, { timeout: 5000 })
+
+    const panel = screen.getByText('Evolução').closest('section')!
+    const dl = panel.querySelector('dl')!
+    expect(dl).toBeTruthy()
+
+    const rows = Array.from(dl.children)
+    expect(rows).toHaveLength(3)
+    for (const row of rows) {
+      expect(row.tagName).toBe('DIV')
+      expect(Array.from(row.children).map((child) => child.tagName)).toEqual(['DT', 'DD'])
+    }
+
+    const currentMonth = screen.getByText(/^Mês atual · /)
+    const competence = screen.getByText(/^Competência, simplificado/)
+    expect(dl.contains(currentMonth)).toBe(false)
+    expect(dl.contains(competence)).toBe(false)
+    expect(rows[2].className).toContain('border-t')
+    expect(rows[2].className).toContain('pt-3')
+  })
+
+  it('visão geral: botões de definição têm 24x24px e abrem/fecham a nota sem navegar', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/overview')
+    await screen.findByRole('heading', { name: 'Situação financeira' }, { timeout: 5000 })
+
+    const buttons = screen.getAllByRole('button', { name: /^Definição:/ })
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const button of buttons) {
+      expect(button.className).toContain('h-6')
+      expect(button.className).toContain('w-6')
+      expect(button.className).toContain('-m-1')
+    }
+
+    const button = screen.getByRole('button', { name: 'Definição: Saldo registrado' })
+    await user.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    const note = screen.getByRole('note')
+    expect(button.getAttribute('aria-controls')).toBe(note.id)
+    expect(screen.getByRole('heading', { name: 'Situação financeira' })).toBeTruthy()
+
+    await user.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('note')).toBeNull()
+
+    await user.click(button)
+    expect(screen.getByRole('note')).toBeTruthy()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('note')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Situação financeira' })).toBeTruthy()
+  })
+
   it('visão geral: mostra 3 alertas e expande a lista na própria página', async () => {
     const user = userEvent.setup()
     renderAt('/app/overview')
