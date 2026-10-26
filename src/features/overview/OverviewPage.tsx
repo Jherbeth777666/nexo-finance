@@ -4,15 +4,20 @@ import { useAlerts, useOverview } from '@/data/useFinance'
 import { useData } from '@/data/store'
 import { METRIC_DEFINITIONS } from '@/domain/finance/metrics'
 import { BASE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
-import { ButtonLink, Definition, EmptyState, Money, PageHeader, Panel, SeverityTag, cx, severityBar } from '@/components/ui'
+import { Button, ButtonLink, Definition, EmptyState, Money, PageHeader, Panel, SeverityTag, cx, severityBar } from '@/components/ui'
 import { Icon } from '@/components/icons'
 import { MonthlyBars, ProjectionChart } from '@/components/charts'
 import { addDays, formatDateBR, formatMonthLabel } from '@/lib/dates'
 import { formatBRL } from '@/lib/money'
 
+const ALERT_ICON = { critical: 'alert', warning: 'alert', info: 'info' } as const
+const ALERT_ICON_TONE = { critical: 'text-risk', warning: 'text-warn', info: 'text-accent' } as const
+
 export default function OverviewPage() {
   const o = useOverview()
   const { open } = useAlerts()
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
+  const visibleAlerts = showAllAlerts ? open : open.slice(0, 3)
 
   return (
     <>
@@ -36,12 +41,13 @@ export default function OverviewPage() {
         <h2 id="situacao" className="sr-only">
           Situação atual
         </h2>
-        <div className="grid grid-cols-2 gap-px bg-line-soft sm:grid-cols-3 xl:grid-cols-5 [&>*:first-child]:col-span-2 sm:[&>*:first-child]:col-span-1 sm:[&>*:first-child]:row-span-2 xl:[&>*:first-child]:row-span-1">
+        <div className="grid grid-cols-1 gap-px bg-line-soft sm:grid-cols-2 lg:grid-cols-6">
           <Figure
             to="/app/fluxo-de-caixa"
             label="Saldo registrado"
             definition={METRIC_DEFINITIONS.registeredBalance}
-            value={<Money value={o.balance} tone="risk-only" className="text-[26px] font-semibold tracking-tight" />}
+            featured
+            value={<Money value={o.balance} tone="risk-only" className="text-[32px] leading-none font-semibold tracking-tight sm:text-[30px]" />}
             foot={o.balances.map((b) => (
               <span key={b.account.id} className="block truncate">
                 {b.account.name} · <span className="num">{formatBRL(b.balance)}</span>
@@ -52,7 +58,7 @@ export default function OverviewPage() {
             to="/app/movimentacoes?visao=receivables"
             label="A receber"
             definition={METRIC_DEFINITIONS.receivables}
-            value={<Money value={o.receivables.total.value} className="text-xl font-semibold" />}
+            value={<Money value={o.receivables.total.value} className="text-xl font-semibold text-pos" />}
             foot={
               <>
                 <span className="num">{o.receivables.dueNext7.count}</span> nos próximos 7 dias ·{' '}
@@ -64,7 +70,7 @@ export default function OverviewPage() {
             to="/app/movimentacoes?visao=payables"
             label="A pagar"
             definition={METRIC_DEFINITIONS.payables}
-            value={<Money value={o.payables.total.value} className="text-xl font-semibold" />}
+            value={<Money value={o.payables.total.value} className="text-xl font-semibold text-risk" />}
             foot={
               <>
                 <span className="num">{o.payables.dueNext7.count}</span> nos próximos 7 dias ·{' '}
@@ -132,13 +138,14 @@ export default function OverviewPage() {
             </EmptyState>
           ) : (
             <ol className="divide-y divide-line-soft">
-              {open.slice(0, 5).map((a) => (
+              {visibleAlerts.map((a) => (
                 <li key={a.fingerprint}>
                   <Link
                     to={`/app/inteligencia?alerta=${encodeURIComponent(a.fingerprint)}`}
-                    className="group relative flex gap-4 px-4 py-3.5 transition-colors hover:bg-surface-2/60 sm:px-5"
+                    className="group relative flex gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2/60 sm:gap-4 sm:px-5"
                   >
                     <span className={cx('absolute top-3.5 bottom-3.5 left-0 w-[3px] rounded-r', severityBar(a.severity))} aria-hidden="true" />
+                    <Icon name={ALERT_ICON[a.severity]} size={16} className={cx('mt-0.5 shrink-0', ALERT_ICON_TONE[a.severity])} />
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
                         <SeverityTag severity={a.severity} />
@@ -157,6 +164,19 @@ export default function OverviewPage() {
                   </Link>
                 </li>
               ))}
+              {open.length > 3 && (
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-center rounded-none"
+                    aria-expanded={showAllAlerts}
+                    onClick={() => setShowAllAlerts((v) => !v)}
+                  >
+                    {showAllAlerts ? 'Mostrar menos' : `Ver todos (${open.length})`}
+                  </Button>
+                </li>
+              )}
             </ol>
           )}
         </Panel>
@@ -172,10 +192,10 @@ export default function OverviewPage() {
           <dl className="grid content-start gap-3 text-sm">
             <p className="eyebrow">Mês atual · {formatMonthLabel(o.today.slice(0, 7))} até hoje</p>
             <Row label="Recebido" def={METRIC_DEFINITIONS.cashIn} to="/app/movimentacoes?visao=cash_in_month">
-              <Money value={o.month.cashIn.value} />
+              <Money value={o.month.cashIn.value} className="text-pos" />
             </Row>
             <Row label="Pago" def={METRIC_DEFINITIONS.cashOut} to="/app/movimentacoes?visao=cash_out_month">
-              <Money value={o.month.cashOut.value} />
+              <Money value={o.month.cashOut.value} className="text-risk" />
             </Row>
             <div className="border-t border-line-soft pt-3">
               <Row label="Resultado operacional estimado" def={METRIC_DEFINITIONS.operatingResult}>
@@ -190,9 +210,30 @@ export default function OverviewPage() {
   )
 }
 
-function Figure({ label, definition, value, foot, to }: { label: string; definition: string; value: ReactNode; foot: ReactNode; to: string }) {
+function Figure({
+  label,
+  definition,
+  value,
+  foot,
+  to,
+  featured,
+}: {
+  label: string
+  definition: string
+  value: ReactNode
+  foot: ReactNode
+  to: string
+  featured?: boolean
+}) {
   return (
-    <div className="group relative flex min-w-0 flex-col justify-between gap-3 bg-surface px-4 py-4 transition-colors hover:bg-[#1a212c] sm:px-5">
+    <div
+      className={cx(
+        'group relative flex min-w-0 flex-col justify-between gap-3 p-4 transition-colors sm:p-5',
+        featured
+          ? 'bg-gradient-to-br from-accent/10 via-surface to-surface ring-1 ring-inset ring-accent/25 hover:from-accent/20 sm:col-span-2'
+          : 'bg-surface hover:bg-surface-2/60',
+      )}
+    >
       <div className="flex items-center gap-1.5">
         <span className="eyebrow">{label}</span>
         <span className="relative z-10">

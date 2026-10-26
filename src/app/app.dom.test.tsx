@@ -378,6 +378,65 @@ ${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
   })
 })
 
+describe('segundo passe visual', () => {
+  it('landing: prévia empilha os KPIs no celular e mantém a faixa de confiança', async () => {
+    renderAt('/')
+    expect(await screen.findByRole('heading', { name: /Veja o que vem antes do problema/ }, { timeout: 5000 })).toBeTruthy()
+
+    const saldoCell = screen.getByText('Saldo hoje').closest('div')!
+    const previewGrid = saldoCell.parentElement!
+    expect(previewGrid.className).toContain('grid-cols-1')
+    expect(previewGrid.className).toContain('sm:grid-cols-3')
+    expect(saldoCell.querySelector('.num')!.className).toContain('text-lg')
+
+    for (const label of ['Cálculos auditáveis', 'Isolamento entre empresas', 'IA opcional e revisada', 'Só dados agregados vão à IA']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+
+    const cta = screen.getByRole('link', { name: 'Comece pela demonstração' })
+    expect(cta.getAttribute('href')).toBe('/app/overview?modo=demo')
+    expect(screen.getAllByRole('link', { name: 'Criar conta' }).some((link) => link.getAttribute('href') === '/cadastro')).toBe(true)
+  })
+
+  it('visão geral: destaca o saldo e usa cor com significado nos KPIs', async () => {
+    renderAt('/app/overview')
+    await screen.findByRole('heading', { name: 'Situação financeira' }, { timeout: 5000 })
+
+    const cellFor = (label: string) => screen.getByText(label, { selector: '.eyebrow' }).closest('div')!.parentElement!
+    const valueClassFor = (label: string) => cellFor(label).querySelector('.min-h-8')!.firstElementChild?.className ?? ''
+
+    const saldoCell = cellFor('Saldo registrado')
+    expect(saldoCell.className).toContain('sm:col-span-2')
+    expect(saldoCell.className).toContain('ring-accent')
+    expect(saldoCell.parentElement!.className).toContain('grid-cols-1')
+    expect(saldoCell.parentElement!.className).toContain('lg:grid-cols-6')
+
+    expect(valueClassFor('A receber')).toContain('text-pos')
+    expect(valueClassFor('A pagar')).toContain('text-risk')
+  })
+
+  it('visão geral: mostra 3 alertas e expande a lista na própria página', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/overview')
+    await screen.findByRole('heading', { name: 'Situação financeira' }, { timeout: 5000 })
+
+    const panel = screen.getByText('O que merece atenção').closest('section')!
+    const alertLinks = () =>
+      within(panel)
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('href')?.startsWith('/app/inteligencia?alerta='))
+    expect(alertLinks()).toHaveLength(3)
+
+    const button = within(panel).getByRole('button', { name: /^Ver todos \(\d+\)$/ })
+    const total = Number(button.textContent!.match(/\d+/)![0])
+    expect(total).toBeGreaterThan(3)
+
+    await user.click(button)
+    expect(alertLinks()).toHaveLength(total)
+    expect(within(panel).getByRole('button', { name: 'Mostrar menos' })).toBeTruthy()
+  })
+})
+
 describe('estados de erro', () => {
   it('falha ao carregar dados mostra mensagem e permite tentar de novo', async () => {
     const spy = vi.spyOn(DemoRepository.prototype, 'load').mockRejectedValueOnce(new Error('falha'))

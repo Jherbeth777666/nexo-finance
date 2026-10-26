@@ -47,7 +47,7 @@ export default function LandingPage() {
       </header>
 
       <main>
-        <section className="mx-auto grid max-w-6xl gap-12 px-4 pt-14 pb-20 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:pt-24">
+        <section className="relative mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-12 overflow-x-clip px-4 pt-14 pb-16 sm:px-6 sm:pb-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:pt-24 lg:pb-24">
           <div>
             <p className="eyebrow mb-4">Inteligência financeira para pequenas empresas</p>
             <h1 className="text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.4rem]">
@@ -70,91 +70,151 @@ export default function LandingPage() {
           </div>
 
           {/* Prévia real do produto */}
-          <figure className="overflow-hidden rounded-lg border border-line-soft bg-surface shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between border-b border-line-soft px-4 py-2.5">
-              <span className="text-xs text-ink-2">{preview.company}</span>
-              <Tag tone="warn">dados fictícios</Tag>
+          <div className="relative">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -inset-6 rounded-[2rem] opacity-80 blur-2xl sm:-inset-10"
+              style={{
+                background: 'radial-gradient(55% 55% at 62% 28%, color-mix(in srgb, var(--color-accent) 24%, transparent), transparent 72%)',
+              }}
+            />
+            <div className="relative rounded-lg bg-gradient-to-br from-accent/40 via-line/70 to-line-soft/30 p-px shadow-2xl shadow-black/50">
+              <figure className="overflow-hidden rounded-[11px] bg-surface">
+                <div className="flex items-center justify-between gap-3 border-b border-line-soft px-4 py-2.5">
+                  <span className="truncate text-xs text-ink-2">{preview.company}</span>
+                  <Tag tone="warn">dados fictícios</Tag>
+                </div>
+                <div className="grid grid-cols-1 gap-px bg-line-soft text-sm sm:grid-cols-3">
+                  <div className="min-w-0 bg-surface px-4 py-3">
+                    <p className="eyebrow">Saldo hoje</p>
+                    <Money value={preview.p.startBalance} className="mt-1 block text-lg font-semibold sm:text-base" />
+                  </div>
+                  <div className="min-w-0 bg-surface px-4 py-3">
+                    <p className="eyebrow">Mínimo 30 dias</p>
+                    <Money value={preview.p.minBalance} tone="risk-only" className="mt-1 block text-lg font-semibold sm:text-base" />
+                  </div>
+                  <div className="min-w-0 bg-surface px-4 py-3">
+                    <p className="eyebrow">Em {formatDateBR(preview.p.minDate).slice(0, 5)}</p>
+                    <span className="mt-1 block text-lg font-semibold text-ink-2 sm:text-base">dia mais apertado</span>
+                  </div>
+                </div>
+                <div className="px-3 pt-3">
+                  <ProjectionChart
+                    points={preview.p.days.map((d) => ({ date: d.date, balance: d.balance, inflow: d.inflow, outflow: d.outflow }))}
+                    height={170}
+                    highlightDate={preview.p.minDate}
+                  />
+                </div>
+                <ul className="divide-y divide-line-soft border-t border-line-soft">
+                  {preview.alerts.map((a) => (
+                    <li key={a.fingerprint} className="flex items-center gap-3 px-4 py-2.5">
+                      <SeverityTag severity={a.severity} />
+                      <span className="truncate text-sm text-ink">{a.title}</span>
+                    </li>
+                  ))}
+                </ul>
+                <figcaption className="border-t border-line-soft px-4 py-2 text-2xs text-ink-3">
+                  Calculado agora pelo mesmo motor da aplicação, sobre a empresa fictícia da demonstração.
+                </figcaption>
+              </figure>
             </div>
-            <div className="grid grid-cols-3 gap-px bg-line-soft text-sm">
-              <div className="bg-surface px-4 py-3">
-                <p className="eyebrow">Saldo hoje</p>
-                <Money value={preview.p.startBalance} className="mt-1 block text-base font-semibold" />
-              </div>
-              <div className="bg-surface px-4 py-3">
-                <p className="eyebrow">Mínimo 30 dias</p>
-                <Money value={preview.p.minBalance} tone="risk-only" className="mt-1 block text-base font-semibold" />
-              </div>
-              <div className="bg-surface px-4 py-3">
-                <p className="eyebrow">Em {formatDateBR(preview.p.minDate).slice(0, 5)}</p>
-                <span className="mt-1 block text-base font-semibold text-ink-2">dia mais apertado</span>
-              </div>
-            </div>
-            <div className="px-3 pt-3">
-              <ProjectionChart
-                points={preview.p.days.map((d) => ({ date: d.date, balance: d.balance, inflow: d.inflow, outflow: d.outflow }))}
-                height={170}
-                highlightDate={preview.p.minDate}
-              />
-            </div>
-            <ul className="divide-y divide-line-soft border-t border-line-soft">
-              {preview.alerts.map((a) => (
-                <li key={a.fingerprint} className="flex items-center gap-3 px-4 py-2.5">
-                  <SeverityTag severity={a.severity} />
-                  <span className="truncate text-sm text-ink">{a.title}</span>
-                </li>
-              ))}
-            </ul>
-            <figcaption className="border-t border-line-soft px-4 py-2 text-2xs text-ink-3">
-              Calculado agora pelo mesmo motor da aplicação, sobre a empresa fictícia da demonstração.
-            </figcaption>
-          </figure>
+          </div>
         </section>
 
-        <section className="border-y border-line-soft bg-surface/50">
-          <div className="mx-auto grid max-w-6xl gap-px bg-line-soft sm:grid-cols-3">
+        <section aria-label="Confiança do produto" className="border-t border-line-soft bg-surface/40">
+          <ul className="mx-auto grid max-w-6xl grid-cols-2 gap-x-5 gap-y-4 px-4 py-6 sm:grid-cols-4 sm:gap-x-6 sm:px-6">
             {[
-              [
-                'O que está acontecendo com o dinheiro?',
-                'Saldo registrado, contas a pagar e a receber e vencidos em uma leitura só — cada número abre os lançamentos que o compõem.',
-              ],
-              [
-                'O que pode acontecer nas próximas semanas?',
-                'Projeção de 7, 30 e 90 dias com cenários base, conservador e personalizado. Premissas sempre visíveis.',
-              ],
-              [
-                'O que merece atenção — e o que fazer?',
-                'Alertas priorizados com evidências numéricas, período analisado, impacto estimado e próxima ação sugerida.',
-              ],
-            ].map(([q, a]) => (
-              <div key={q} className="bg-bg px-6 py-10">
-                <p className="text-lg leading-snug font-semibold tracking-tight">{q}</p>
+              { icon: 'report', label: 'Cálculos auditáveis' },
+              { icon: 'lock', label: 'Isolamento entre empresas' },
+              { icon: 'eye', label: 'IA opcional e revisada' },
+              { icon: 'signal', label: 'Só dados agregados vão à IA' },
+            ].map(({ icon, label }) => (
+              <li key={label} className="flex min-w-0 items-center gap-2.5">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                  <Icon name={icon as 'report' | 'lock' | 'eye' | 'signal'} size={16} />
+                </span>
+                <span className="text-xs leading-snug font-medium text-ink-2 sm:text-sm">{label}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="border-y border-line-soft bg-surface/40">
+          <div className="mx-auto grid max-w-6xl divide-y divide-line-soft px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:px-6">
+            {[
+              {
+                icon: 'signal',
+                q: 'O que está acontecendo com o dinheiro?',
+                a: 'Saldo registrado, contas a pagar e a receber e vencidos em uma leitura só — cada número abre os lançamentos que o compõem.',
+              },
+              {
+                icon: 'flow',
+                q: 'O que pode acontecer nas próximas semanas?',
+                a: 'Projeção de 7, 30 e 90 dias com cenários base, conservador e personalizado. Premissas sempre visíveis.',
+              },
+              {
+                icon: 'alert',
+                q: 'O que merece atenção — e o que fazer?',
+                a: 'Alertas priorizados com evidências numéricas, período analisado, impacto estimado e próxima ação sugerida.',
+              },
+            ].map(({ icon, q, a }) => (
+              <div key={q} className="px-0 py-8 sm:px-6 sm:py-12">
+                <span className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-md bg-accent-soft text-accent">
+                  <Icon name={icon as 'signal' | 'flow' | 'alert'} size={18} />
+                </span>
+                <p className="text-lg leading-snug font-semibold tracking-tight sm:text-xl">{q}</p>
                 <p className="mt-3 text-sm leading-relaxed text-ink-2">{a}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section id="como-funciona" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <section id="como-funciona" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
           <p className="eyebrow mb-3">Como funciona</p>
           <h2 className="max-w-xl text-2xl font-semibold tracking-tight sm:text-3xl">Da planilha à decisão, sem fórmulas novas.</h2>
           <ol className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ['Importe', 'CSV ou Excel com os nomes de coluna que você já usa. O sistema sugere o mapeamento e aponta cada linha com problema.'],
-              ['Entenda', 'Indicadores com definição explícita. Resultado operacional não é apresentado como lucro contábil.'],
-              ['Antecipe', 'Datas de saldo mínimo, semanas de pagamentos concentrados e recebimentos atrasados que afetam o caixa.'],
-              ['Simule', 'Contratar, comprar, renegociar ou atrasar: compare o cenário atual com o alternativo antes de decidir.'],
-            ].map(([t, d], i) => (
-              <li key={t}>
-                <span className="num text-sm text-ink-3">0{i + 1}</span>
-                <p className="mt-2 font-semibold">{t}</p>
-                <p className="mt-2 text-sm leading-relaxed text-ink-2">{d}</p>
+              {
+                icon: 'upload',
+                t: 'Importe',
+                d: 'CSV ou Excel com os nomes de coluna que você já usa. O sistema sugere o mapeamento e aponta cada linha com problema.',
+              },
+              {
+                icon: 'report',
+                t: 'Entenda',
+                d: 'Indicadores com definição explícita. Resultado operacional não é apresentado como lucro contábil.',
+              },
+              {
+                icon: 'calendar',
+                t: 'Antecipe',
+                d: 'Datas de saldo mínimo, semanas de pagamentos concentrados e recebimentos atrasados que afetam o caixa.',
+              },
+              {
+                icon: 'sliders',
+                t: 'Simule',
+                d: 'Contratar, comprar, renegociar ou atrasar: compare o cenário atual com o alternativo antes de decidir.',
+              },
+            ].map(({ icon, t, d }, i) => (
+              <li key={t} className="relative flex gap-4 lg:block">
+                {i < 3 && <span aria-hidden="true" className="absolute top-10 -bottom-8 left-5 w-px bg-line-soft sm:hidden" />}
+                {i < 3 && <span aria-hidden="true" className="absolute top-5 left-10 -right-8 hidden h-px bg-line-soft lg:block" />}
+                <div className="num relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-bg shadow-lg shadow-accent/20 lg:mb-4">
+                  {i + 1}
+                </div>
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-base font-semibold">
+                    <Icon name={icon as 'upload' | 'report' | 'calendar' | 'sliders'} size={16} className="text-accent" />
+                    {t}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-ink-2">{d}</p>
+                </div>
               </li>
             ))}
           </ol>
         </section>
 
-        <section className="border-t border-line-soft">
-          <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2">
+        <section className="border-y border-line-soft bg-surface/40">
+          <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-2">
             <div>
               <p className="eyebrow mb-3">Princípios</p>
               <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Conclusões que você consegue conferir.</h2>
@@ -179,8 +239,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="seguranca" className="border-t border-line-soft bg-surface/50">
-          <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <section id="seguranca">
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
             <p className="eyebrow mb-3">Privacidade e segurança</p>
             <h2 className="max-w-xl text-2xl font-semibold tracking-tight sm:text-3xl">Seus números são seus.</h2>
             <div className="mt-8 grid gap-8 text-sm leading-relaxed text-ink-2 sm:grid-cols-3">
@@ -204,14 +264,21 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 py-20 text-center sm:px-6">
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Experimente com uma empresa fictícia.</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-ink-2">
-            Edite lançamentos, importe uma planilha, abra alertas e simule decisões. Você pode reinicializar os dados quando quiser.
-          </p>
-          <ButtonLink to="/app/overview?modo=demo" variant="primary" className="mt-6">
-            Abrir demonstração
-          </ButtonLink>
+        <section className="border-t border-line-soft bg-surface/40">
+          <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-24">
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Experimente com uma empresa fictícia.</h2>
+            <p className="mx-auto mt-3 max-w-md text-sm text-ink-2">
+              Edite lançamentos, importe uma planilha, abra alertas e simule decisões. Você pode reinicializar os dados quando quiser.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <ButtonLink to="/app/overview?modo=demo" variant="primary">
+                Comece pela demonstração
+              </ButtonLink>
+              <ButtonLink to="/cadastro" variant="secondary">
+                Criar conta
+              </ButtonLink>
+            </div>
+          </div>
         </section>
       </main>
 
