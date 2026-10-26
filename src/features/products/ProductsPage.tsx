@@ -181,7 +181,8 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {sales !== null && (
+      {/* Sem vendas carregadas (erro), o catálogo continua acessível; as demais abas dependem das vendas. */}
+      {(sales !== null || (loadError !== null && tab === 'catalogo')) && (
         <>
           {tab === 'visao' && (
             <div className="space-y-5">
@@ -669,12 +670,12 @@ const RANK_STYLES = [
 ]
 
 function RankingList({ stats, metric }: { stats: ProductStat[]; metric: RankingMetric }) {
-  const max = Math.max(1, ...stats.map((s) => (metric === 'revenue' ? s.revenue : s.quantity)))
+  const max = Math.max(0, ...stats.map((s) => (metric === 'revenue' ? s.revenue : s.quantity)))
   return (
     <ol className="space-y-2">
       {stats.map((s, i) => {
         const value = metric === 'revenue' ? s.revenue : s.quantity
-        const pct = Math.max(2, Math.round((value / max) * 100))
+        const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0
         return (
           <li key={s.product.id} className="rounded-md border border-line-soft bg-surface-2/40 px-3 py-2.5">
             <div className="flex items-center gap-2.5">

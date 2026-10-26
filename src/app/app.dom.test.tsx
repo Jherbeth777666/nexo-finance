@@ -285,7 +285,7 @@ ${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
     const user = userEvent.setup()
     renderAt('/app/produtos')
     await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
-    const tab = await screen.findByRole('radio', { name: 'Reposição' })
+    const tab = await screen.findByRole('radio', { name: /^Reposição/ })
     await user.click(tab)
     const heading = await screen.findByRole('heading', { name: /(Cobertura de estoque|pedem atenção)/ })
     const panel = heading.closest('section')!
@@ -294,7 +294,7 @@ ${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
     expect(within(panel).getAllByText('Cobertura').length).toBeGreaterThan(0)
   })
 
-  it('controle segmentado mantém o nome acessível e mostra o contador', () => {
+  it('controle segmentado anuncia o contador no nome acessível', () => {
     const onChange = vi.fn()
     render(
       <Segmented
@@ -309,7 +309,8 @@ ${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
     )
     const group = screen.getByRole('radiogroup', { name: 'Seções' })
     expect(group.className).toContain('overflow-x-auto')
-    const reposicao = screen.getByRole('radio', { name: 'Reposição' })
+    // O contador faz parte do nome acessível: leitor de tela ouve "Reposição (3)".
+    const reposicao = screen.getByRole('radio', { name: 'Reposição (3)' })
     expect(reposicao.textContent).toContain('3')
     fireEvent.click(reposicao)
     expect(onChange).toHaveBeenCalledWith('reposicao')

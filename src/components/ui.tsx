@@ -343,7 +343,7 @@ export function Segmented<T extends string | number>({
             key={String(o.value)}
             type="button"
             role="radio"
-            aria-label={o.label}
+            aria-label={o.count ? `${o.label} (${o.count})` : o.label}
             aria-checked={active}
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => {
