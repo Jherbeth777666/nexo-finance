@@ -200,7 +200,7 @@ export function Definition({ text, label = 'Ver definição' }: { text: string; 
           e.stopPropagation()
           setOpen((o) => !o)
         }}
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-ink-3 hover:text-ink"
+        className="inline-flex h-6 w-6 -m-1 items-center justify-center rounded-full text-ink-3 hover:text-ink"
       >
         <Icon name="info" size={13} />
       </button>

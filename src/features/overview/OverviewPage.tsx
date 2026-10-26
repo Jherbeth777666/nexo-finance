@@ -189,21 +189,21 @@ export default function OverviewPage() {
       <Panel className="mt-6" eyebrow="Evolução" title="Entradas e saídas realizadas · 6 meses" actions={<Legend />}>
         <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
           <MonthlyBars data={o.evolution} />
-          <dl className="grid content-start gap-3 text-sm">
-            <p className="eyebrow">Mês atual · {formatMonthLabel(o.today.slice(0, 7))} até hoje</p>
-            <Row label="Recebido" def={METRIC_DEFINITIONS.cashIn} to="/app/movimentacoes?visao=cash_in_month">
-              <Money value={o.month.cashIn.value} className="text-pos" />
-            </Row>
-            <Row label="Pago" def={METRIC_DEFINITIONS.cashOut} to="/app/movimentacoes?visao=cash_out_month">
-              <Money value={o.month.cashOut.value} className="text-risk" />
-            </Row>
-            <div className="border-t border-line-soft pt-3">
-              <Row label="Resultado operacional estimado" def={METRIC_DEFINITIONS.operatingResult}>
+          <div className="grid content-start text-sm">
+            <p className="eyebrow mb-3">Mês atual · {formatMonthLabel(o.today.slice(0, 7))} até hoje</p>
+            <dl className="grid gap-3">
+              <Row label="Recebido" def={METRIC_DEFINITIONS.cashIn} to="/app/movimentacoes?visao=cash_in_month">
+                <Money value={o.month.cashIn.value} className="text-pos" />
+              </Row>
+              <Row label="Pago" def={METRIC_DEFINITIONS.cashOut} to="/app/movimentacoes?visao=cash_out_month">
+                <Money value={o.month.cashOut.value} className="text-risk" />
+              </Row>
+              <Row label="Resultado operacional estimado" def={METRIC_DEFINITIONS.operatingResult} className="border-t border-line-soft pt-3">
                 <Money value={o.month.operatingResult} tone="auto" className="font-semibold" />
               </Row>
-              <p className="mt-1 text-2xs text-ink-3">Competência, simplificado. Não é lucro contábil.</p>
-            </div>
-          </dl>
+            </dl>
+            <p className="mt-1 text-2xs text-ink-3">Competência, simplificado. Não é lucro contábil.</p>
+          </div>
         </div>
       </Panel>
     </>
@@ -247,9 +247,9 @@ function Figure({
   )
 }
 
-function Row({ label, def, to, children }: { label: string; def: string; to?: string; children: ReactNode }) {
+function Row({ label, def, to, className, children }: { label: string; def: string; to?: string; className?: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className={cx('flex items-baseline justify-between gap-3', className)}>
       <dt className="flex items-center gap-1.5 text-ink-2">
         {to ? (
           <Link to={to} className="hover:text-ink hover:underline">
