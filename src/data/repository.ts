@@ -8,6 +8,10 @@ import type {
   CompanyInvite,
   CompanyMember,
   InviteRole,
+  LocalEvent,
+  LocalEventKind,
+  Product,
+  ProductSale,
   Transaction,
 } from '@/domain/types'
 import type { AlertConfig } from '@/domain/finance/alerts'
@@ -18,6 +22,8 @@ import type { ScenarioAssumptions } from '@/domain/finance/projection'
 import type { Cents } from '@/lib/money'
 import type { ISODate } from '@/lib/dates'
 import type { AgentKind, AnalysisResult, Facts, Review } from '@/domain/ai/analysis'
+import type { NewProductSale } from '@/domain/products/mapping'
+import type { MilliQty } from '@/domain/products/quantity'
 
 /**
  * Contrato de acesso a dados. A interface não sabe se os dados vêm do modo de demonstração
@@ -93,11 +99,32 @@ export interface AiAnalysisResponse {
   model?: string
 }
 
+export interface SaveProductInput {
+  id?: string
+  name: string
+  code?: string | null
+  unit?: string
+  costPrice: Cents | null
+  stock: MilliQty | null
+  stockUpdatedAt?: ISODate | null
+  minStock: MilliQty | null
+  leadTimeDays: number | null
+}
+
+export interface SaveLocalEventInput {
+  name: string
+  startDate: ISODate
+  endDate?: ISODate | null
+  kind?: LocalEventKind
+}
+
 export interface CompanySnapshot {
   company: Company
   accounts: Account[]
   categories: Category[]
   transactions: Transaction[]
+  products: Product[]
+  localEvents: LocalEvent[]
   alertStatus: Record<string, AlertStatusRecord>
   audit: AuditEntry[]
   imports: ImportRecord[]
@@ -138,6 +165,13 @@ export interface FinanceRepository {
   getBaseProjection(asOf: ISODate, horizonDays: number): Promise<BaseProjection>
   /** Análise por agente. No demo é local; no Supabase é gerada na Edge Function. */
   requestAnalysis(agent: AgentKind): Promise<AiAnalysisResponse>
+  /** Vendas por item de uma janela inclusiva; o snapshot não carrega o histórico completo. */
+  listProductSales(from: ISODate, to: ISODate): Promise<ProductSale[]>
+  /** Dos identificadores de origem candidatos, devolve os que já existem (sem depender da janela). */
+  existingProductSaleRefs(sourceRefs: string[]): Promise<string[]>
+  saveProduct(input: SaveProductInput): Promise<Product>
+  importProductSales(rows: NewProductSale[], meta: Omit<ImportRecord, 'id' | 'at' | 'actor'>): Promise<ImportRecord>
+  saveLocalEvent(input: SaveLocalEventInput): Promise<LocalEvent>
 }
 
 export class RepositoryError extends Error {}

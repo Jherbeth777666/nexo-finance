@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { App } from '@/App'
@@ -14,10 +14,15 @@ import type { AiAnalysisResponse } from '@/data/repository'
 import { accountBalances } from '@/domain/finance/metrics'
 import type { MemberRole } from '@/domain/types'
 import { formatBRL } from '@/lib/money'
+import { addDays, todayIn } from '@/lib/dates'
 import { validateLogin, validateSignup } from '@/features/auth/validation'
 import { PENDING_INVITE_KEY, readPendingInvite, savePendingInvite } from '@/features/invites/pendingInvite'
 
-beforeAll(() => {
+beforeAll(async () => {
+  if (!globalThis.crypto?.subtle) {
+    const { webcrypto } = await import('node:crypto')
+    Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true })
+  }
   globalThis.ResizeObserver ??= class {
     observe() {}
     unobserve() {}
@@ -134,6 +139,142 @@ describe('navegação', () => {
     expect(await screen.findByRole('heading', { name: 'Para onde o caixa está indo' }, { timeout: 5000 })).toBeTruthy()
     await user.click(within(nav).getByRole('link', { name: /Simulador/ }))
     expect(await screen.findByRole('heading', { name: 'Teste antes de decidir' }, { timeout: 5000 })).toBeTruthy()
+  })
+
+  it('produtos: mostra ranking, catálogo e permite editar um produto', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    expect(await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })).toBeTruthy()
+    expect(await screen.findByText('Ranking por faturamento (30 dias)')).toBeTruthy()
+    expect((await screen.findAllByText('Arroz branco 5 kg')).length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
+    const row = (await screen.findByText('Arroz branco 5 kg')).closest('tr')!
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog')
+    const name = within(dialog).getByLabelText('Nome')
+    await user.clear(name)
+    await user.type(name, 'Arroz premium 5 kg')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(await screen.findByText('Produto atualizado')).toBeTruthy()
+    expect(await screen.findByText('Arroz premium 5 kg')).toBeTruthy()
+  })
+
+  it('produtos: mostra os menos vendidos e alterna o ranking por faturamento e quantidade', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    expect(await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })).toBeTruthy()
+
+    expect(await screen.findByText('Ranking por faturamento (30 dias)')).toBeTruthy()
+    const byRevenue = screen.getByRole('radio', { name: 'Por faturamento' })
+    const byQuantity = screen.getByRole('radio', { name: 'Por quantidade' })
+    expect(byRevenue.getAttribute('aria-checked')).toBe('true')
+    expect(byQuantity.getAttribute('aria-checked')).toBe('false')
+
+    const leastHeading = await screen.findByText('Menos vendidos (90 dias)')
+    const leastPanel = leastHeading.closest('section')!
+    expect(within(leastPanel).getByText(/Carvão 3 kg/)).toBeTruthy()
+
+    await user.click(byQuantity)
+    expect(await screen.findByText('Ranking por quantidade (30 dias)')).toBeTruthy()
+    expect(byQuantity.getAttribute('aria-checked')).toBe('true')
+    expect(byRevenue.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('produtos: importa vendas por item de um CSV', async () => {
+    const user = userEvent.setup()
+    const today = todayIn()
+    const [year, month, day] = today.split('-')
+    const csv = `Data,Produto,Código,Quantidade,Valor total
+${day}/${month}/${year},Café Teste,CAFT,2,"99999,00"
+`
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('button', { name: 'Importar vendas por item' }))
+    const dialog = await screen.findByRole('dialog')
+    const file = new File([csv], 'vendas.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(csv).buffer })
+    await user.upload(within(dialog).getByLabelText('Arquivo de vendas por item'), file)
+    expect(await within(dialog).findByText(/1 linha\(s\)/)).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Validar planilha' }))
+    expect(await within(dialog).findByText('1 a importar')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Importar 1 venda(s)' }))
+    expect(await screen.findByText('Vendas por item importadas')).toBeTruthy()
+    // As vendas são recarregadas quando data.imports muda; sem isso o ranking ficaria vazio.
+    const ranking = (await screen.findByText('Ranking por faturamento (30 dias)')).closest('section')!
+    expect(await within(ranking).findByText('Café Teste')).toBeTruthy()
+    await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
+    expect(await screen.findByText('Café Teste')).toBeTruthy()
+  })
+
+  it('produtos: ao mudar o estoque, data da contagem vira hoje e data futura é barrada', async () => {
+    const user = userEvent.setup()
+    const today = todayIn()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('radio', { name: 'Catálogo' }))
+    const row = (await screen.findByText('Arroz branco 5 kg')).closest('tr')!
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog')
+    const stock = within(dialog).getByLabelText('Estoque atual')
+    await user.clear(stock)
+    await user.type(stock, '12')
+    const stockDate = within(dialog).getByLabelText('Data da contagem') as HTMLInputElement
+    expect(stockDate.value).toBe(today)
+    fireEvent.change(stockDate, { target: { value: addDays(today, 1) } })
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(await within(dialog).findByText(/não pode estar no futuro/)).toBeTruthy()
+  })
+
+  it('produtos: reconhece venda já importada mesmo fora da janela carregada', async () => {
+    const user = userEvent.setup()
+    const today = todayIn()
+    const [year, month, day] = addDays(today, -400).split('-')
+    const csv = `Data,Produto,Código,Quantidade,Valor total
+${day}/${month}/${year},Café antigo,CAFA,1,"10,00"
+`
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+
+    const upload = async () => {
+      await user.click(screen.getByRole('button', { name: 'Importar vendas por item' }))
+      const dialog = await screen.findByRole('dialog')
+      const file = new File([csv], 'vendas-antigas.csv', { type: 'text/csv' })
+      Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(csv).buffer })
+      await user.upload(within(dialog).getByLabelText('Arquivo de vendas por item'), file)
+      expect(await within(dialog).findByText(/1 linha\(s\)/)).toBeTruthy()
+      await user.click(within(dialog).getByRole('button', { name: 'Validar planilha' }))
+      return dialog
+    }
+
+    const first = await upload()
+    expect(await within(first).findByText('1 a importar')).toBeTruthy()
+    await user.click(within(first).getByRole('button', { name: 'Importar 1 venda(s)' }))
+    expect(await screen.findByText('Vendas por item importadas')).toBeTruthy()
+
+    const second = await upload()
+    expect(await within(second).findByText('1 já importada(s)')).toBeTruthy()
+    expect(within(second).getByText('0 a importar')).toBeTruthy()
+  })
+
+  it('produtos: sazonalidade usa o histórico maior que 90 dias', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('radio', { name: 'Sazonalidade' }))
+    expect(await screen.findByText(/Com 180 dias de histórico/)).toBeTruthy()
+  })
+
+  it('produtos: cadastra evento local na sazonalidade', async () => {
+    const user = userEvent.setup()
+    renderAt('/app/produtos')
+    await screen.findByRole('heading', { name: 'O que vende, o que parou e o que repor' }, { timeout: 5000 })
+    await user.click(screen.getByRole('radio', { name: 'Sazonalidade' }))
+    expect(await screen.findByText('Sazonalidade observada no seu histórico')).toBeTruthy()
+    await user.type(screen.getByLabelText('Nome do evento'), 'Festejo do padroeiro')
+    await user.click(screen.getByRole('button', { name: 'Adicionar evento' }))
+    expect(await screen.findByText('Evento local cadastrado')).toBeTruthy()
+    expect(await screen.findByText(/Festejo do padroeiro ·/)).toBeTruthy()
   })
 
   it('inteligência em demonstração mostra exemplo local sem chamar IA', async () => {

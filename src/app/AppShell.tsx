@@ -15,6 +15,7 @@ import { PageFallback } from './PageFallback'
 export const NAV: { to: string; label: string; short: string; icon: IconName }[] = [
   { to: '/app/overview', label: 'Visão geral', short: 'Visão', icon: 'overview' },
   { to: '/app/movimentacoes', label: 'Movimentações', short: 'Lançam.', icon: 'list' },
+  { to: '/app/produtos', label: 'Produtos', short: 'Produtos', icon: 'products' },
   { to: '/app/fluxo-de-caixa', label: 'Fluxo de caixa', short: 'Caixa', icon: 'flow' },
   { to: '/app/inteligencia', label: 'Inteligência financeira', short: 'Alertas', icon: 'signal' },
   { to: '/app/simulador', label: 'Simulador', short: 'Simular', icon: 'sliders' },
@@ -236,7 +237,7 @@ function SidebarContent({ onClose, onExitDemo }: { onClose?: () => void; onExitD
         <ul className="space-y-0.5">
           {NAV.map((n, i) => (
             <li key={n.to}>
-              {i === 5 && <div className="mx-2 my-3 border-t border-line-soft" />}
+              {i === 6 && <div className="mx-2 my-3 border-t border-line-soft" />}
               <NavLink
                 to={n.to}
                 className={({ isActive }) =>

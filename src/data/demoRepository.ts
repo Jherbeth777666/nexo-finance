@@ -1,15 +1,39 @@
-import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, Transaction } from '@/domain/types'
+import type {
+  Account,
+  AlertState,
+  AuditEntry,
+  Category,
+  Company,
+  CompanyInvite,
+  CompanyMember,
+  InviteRole,
+  LocalEvent,
+  Product,
+  ProductSale,
+  Transaction,
+} from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG } from '@/domain/finance/alerts'
 import { accountBalances, monthlyEvolution } from '@/domain/finance/metrics'
 import { BASE_SCENARIO, CONSERVATIVE_SCENARIO, projectCashflow } from '@/domain/finance/projection'
 import type { ValidTransaction } from '@/domain/transactions'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
-import { addDays, todayIn } from '@/lib/dates'
+import { addDays, isISODate, todayIn, type ISODate } from '@/lib/dates'
 import { assertCents, formatBRL, type Cents } from '@/lib/money'
 import { buildLocalAnalysis } from '@/domain/ai/analysis'
 import type { CategoryTotal } from '@/domain/ai/facts'
+import { norm, IMPORT_LIMITS } from '@/domain/import/pipeline'
+import { productKey, type NewProductSale } from '@/domain/products/mapping'
 import { buildDemoDataset } from './demo/seed'
-import { RepositoryError, type BaseProjection, type CompanySnapshot, type CreateInviteInput, type FinanceRepository } from './repository'
+import {
+  RepositoryError,
+  type BaseProjection,
+  type CompanySnapshot,
+  type CreateInviteInput,
+  type FinanceRepository,
+  type ImportRecord,
+  type SaveLocalEventInput,
+  type SaveProductInput,
+} from './repository'
 
 /**
  * Repositório do modo de demonstração. Os dados ficam SOMENTE no navegador do visitante,
@@ -28,6 +52,7 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 interface DemoState extends CompanySnapshot {
   members: CompanyMember[]
   invites: CompanyInvite[]
+  productSales: ProductSale[]
 }
 
 function demoMembers(today: string): CompanyMember[] {
@@ -46,6 +71,9 @@ function fresh(): DemoState {
     accounts: ds.accounts,
     categories: ds.categories,
     transactions: ds.transactions,
+    products: ds.products,
+    productSales: ds.productSales,
+    localEvents: ds.localEvents,
     alertStatus: {},
     audit: [],
     imports: [],
@@ -91,6 +119,13 @@ export class DemoRepository implements FinanceRepository {
       this.state.company.role = 'owner'
       patched = true
     }
+    if (!Array.isArray(this.state.products) || !Array.isArray(this.state.localEvents) || !Array.isArray(this.state.productSales)) {
+      const pd = buildDemoDataset(this.state.anchor)
+      if (!Array.isArray(this.state.products)) this.state.products = pd.products
+      if (!Array.isArray(this.state.localEvents)) this.state.localEvents = pd.localEvents
+      if (!Array.isArray(this.state.productSales)) this.state.productSales = pd.productSales
+      patched = true
+    }
     if (patched) this.write()
     return this.state
   }
@@ -109,8 +144,13 @@ export class DemoRepository implements FinanceRepository {
     s.audit = [{ id: uid(), at: new Date().toISOString(), actor: ACTOR, ...e }, ...s.audit].slice(0, 500)
   }
 
+  private snapshot(): CompanySnapshot {
+    const { members: _members, invites: _invites, productSales: _productSales, ...snap } = this.read()
+    return structuredClone(snap)
+  }
+
   async load(): Promise<CompanySnapshot> {
-    return structuredClone(this.read())
+    return this.snapshot()
   }
 
   async createTransaction(input: ValidTransaction): Promise<Transaction> {
@@ -372,11 +412,215 @@ export class DemoRepository implements FinanceRepository {
     }
   }
 
+  async listProductSales(from: string, to: string): Promise<ProductSale[]> {
+    const s = this.read()
+    return structuredClone(
+      s.productSales
+        .filter((sale) => sale.saleDate >= from && sale.saleDate <= to)
+        .sort((a, b) => a.saleDate.localeCompare(b.saleDate) || a.id.localeCompare(b.id)),
+    )
+  }
+
+  async existingProductSaleRefs(sourceRefs: string[]): Promise<string[]> {
+    const unique = [...new Set(sourceRefs.filter(Boolean))]
+    if (!unique.length) return []
+    const wanted = new Set(unique)
+    const existing = new Set(
+      this.read()
+        .productSales.map((sale) => sale.sourceRef)
+        .filter((ref): ref is string => !!ref && wanted.has(ref)),
+    )
+    return unique.filter((ref) => existing.has(ref))
+  }
+
+  async saveProduct(input: SaveProductInput): Promise<Product> {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do produto deve ter entre 2 e 120 caracteres.')
+    const unit = (input.unit ?? 'un').trim() || 'un'
+    if (unit.length > 10) throw new RepositoryError('A unidade deve ter no máximo 10 caracteres.')
+    const code = input.code?.trim() || null
+    if (code && code.length > 40) throw new RepositoryError('O código deve ter no máximo 40 caracteres.')
+    const costPrice = validateOptionalCents(input.costPrice, 'custo')
+    const stock = validateOptionalQuantity(input.stock, 'estoque')
+    const minStock = validateOptionalQuantity(input.minStock, 'estoque mínimo')
+    const leadTimeDays = input.leadTimeDays === null ? null : Math.trunc(input.leadTimeDays)
+    if (leadTimeDays !== null && (leadTimeDays < 0 || leadTimeDays > 365)) throw new RepositoryError('O prazo do fornecedor deve ficar entre 0 e 365 dias.')
+    const s = this.read()
+    const today = todayIn(s.company.timezone)
+    if (input.stock !== null && input.stockUpdatedAt && isISODate(input.stockUpdatedAt) && input.stockUpdatedAt > today) {
+      throw new RepositoryError('A data do estoque não pode estar no futuro.')
+    }
+    const stockUpdatedAt = stock === null ? null : input.stockUpdatedAt && isISODate(input.stockUpdatedAt) ? input.stockUpdatedAt : today
+    const now = new Date().toISOString()
+    if (input.id) {
+      const prev = s.products.find((p) => p.id === input.id)
+      if (!prev) throw new RepositoryError('Produto não encontrado.')
+      if (s.products.some((p) => p.id !== prev.id && productKey(p.name) === productKey(name))) {
+        throw new RepositoryError('Já existe um produto com esse nome.')
+      }
+      if (code && s.products.some((p) => p.id !== prev.id && p.code && norm(p.code) === norm(code))) {
+        throw new RepositoryError('Já existe um produto com esse código.')
+      }
+      const product: Product = {
+        ...prev,
+        name,
+        code,
+        unit,
+        costPrice,
+        stock,
+        stockUpdatedAt,
+        minStock,
+        leadTimeDays,
+        updatedAt: now,
+      }
+      s.products = s.products.map((p) => (p.id === prev.id ? product : p))
+      this.audit({ action: 'update', entity: 'product', entityId: product.id, summary: `Atualizou o produto "${product.name}"` })
+      this.write()
+      return structuredClone(product)
+    }
+    if (s.products.some((p) => productKey(p.name) === productKey(name))) throw new RepositoryError('Já existe um produto com esse nome.')
+    if (code && s.products.some((p) => p.code && norm(p.code) === norm(code))) throw new RepositoryError('Já existe um produto com esse código.')
+    const product: Product = {
+      id: uid(),
+      name,
+      code,
+      unit,
+      costPrice,
+      stock,
+      stockUpdatedAt,
+      minStock,
+      leadTimeDays,
+      createdAt: now,
+      updatedAt: now,
+    }
+    s.products = [...s.products, product]
+    this.audit({ action: 'create', entity: 'product', entityId: product.id, summary: `Cadastrou o produto "${product.name}"` })
+    this.write()
+    return structuredClone(product)
+  }
+
+  async importProductSales(rows: NewProductSale[], meta: Parameters<FinanceRepository['importProductSales']>[1]): Promise<ImportRecord> {
+    if (!rows.length) throw new RepositoryError('Nenhuma venda válida para importar.')
+    if (rows.length > IMPORT_LIMITS.maxRows) throw new RepositoryError(`O limite por importação é ${IMPORT_LIMITS.maxRows} linhas.`)
+    const s = this.read()
+    const existingRefs = new Set(s.productSales.map((sale) => sale.sourceRef).filter(Boolean))
+    const batchRefs = new Set<string>()
+    const id = uid()
+    const now = new Date().toISOString()
+    const created: ProductSale[] = []
+    // Espelha cost_updated_at do banco: a data da última venda que informou custo é a referência
+    // para aceitar um novo custo, e o melhor custo do lote vem da venda mais recente (não da
+    // última linha da planilha).
+    const lastCostDateByProduct = new Map<string, ISODate>()
+    for (const sale of s.productSales) {
+      if (sale.unitCost === null) continue
+      const last = lastCostDateByProduct.get(sale.productId)
+      if (!last || sale.saleDate > last) lastCostDateByProduct.set(sale.productId, sale.saleDate)
+    }
+    const bestCost = new Map<string, { date: ISODate; cost: Cents; order: number }>()
+    for (const [order, row] of rows.entries()) {
+      if (!row.sourceRef) throw new RepositoryError('Venda sem identificador de origem.')
+      if (existingRefs.has(row.sourceRef) || batchRefs.has(row.sourceRef)) {
+        throw new RepositoryError('Uma venda com a mesma origem já foi importada.')
+      }
+      if (!isISODate(row.saleDate) || row.saleDate > todayIn(s.company.timezone)) throw new RepositoryError('Data de venda inválida.')
+      if (!Number.isInteger(row.quantity) || row.quantity <= 0) throw new RepositoryError('Quantidade de venda inválida.')
+      if (!Number.isInteger(row.revenue) || row.revenue < 0) throw new RepositoryError('Receita de venda inválida.')
+      let product = row.productId ? s.products.find((p) => p.id === row.productId) : undefined
+      if (!product && row.productCode) product = s.products.find((p) => p.code && norm(p.code) === norm(row.productCode!))
+      if (!product) product = s.products.find((p) => productKey(p.name) === productKey(row.productName))
+      if (!product) {
+        const freshProduct: Product = {
+          id: uid(),
+          name: row.productName.slice(0, 120),
+          code: row.productCode,
+          unit: 'un',
+          costPrice: null,
+          stock: row.stock,
+          stockUpdatedAt: row.stock === null ? null : row.saleDate,
+          minStock: null,
+          leadTimeDays: null,
+          createdAt: now,
+          updatedAt: now,
+        }
+        s.products = [...s.products, freshProduct]
+        product = freshProduct
+        this.audit({ action: 'create', entity: 'product', entityId: product.id, summary: `Criou "${product.name}" na importação de vendas` })
+      } else {
+        const updates: Partial<Product> = { updatedAt: now }
+        if (row.stock !== null && (!product.stockUpdatedAt || row.saleDate >= product.stockUpdatedAt)) {
+          updates.stock = row.stock
+          updates.stockUpdatedAt = row.saleDate
+        }
+        if (Object.keys(updates).length > 1) {
+          s.products = s.products.map((p) => (p.id === product!.id ? { ...p, ...updates } : p))
+          product = s.products.find((p) => p.id === product!.id)!
+        }
+      }
+      const sale: ProductSale = {
+        id: uid(),
+        productId: product.id,
+        saleDate: row.saleDate,
+        quantity: row.quantity,
+        revenue: row.revenue,
+        unitCost: row.unitCost,
+        sourceRef: row.sourceRef,
+        importId: id,
+        createdAt: now,
+      }
+      created.push(sale)
+      existingRefs.add(row.sourceRef)
+      batchRefs.add(row.sourceRef)
+      if (row.unitCost !== null) {
+        const current = bestCost.get(product.id)
+        if (!current || row.saleDate > current.date || (row.saleDate === current.date && order >= current.order)) {
+          bestCost.set(product.id, { date: row.saleDate, cost: row.unitCost, order })
+        }
+      }
+    }
+    for (const [productId, best] of bestCost) {
+      const product = s.products.find((p) => p.id === productId)
+      if (!product) continue
+      const lastCostDate = lastCostDateByProduct.get(productId)
+      if (product.costPrice === null || !lastCostDate || best.date >= lastCostDate) {
+        product.costPrice = best.cost
+        product.updatedAt = now
+      }
+    }
+    s.productSales = [...s.productSales, ...created]
+    const record = { ...meta, id, at: now, actor: ACTOR }
+    s.imports = [record, ...s.imports]
+    this.audit({ action: 'import', entity: 'import', entityId: id, summary: `Importou ${created.length} venda(s) de produto de "${meta.fileName}"` })
+    this.write()
+    return structuredClone(record)
+  }
+
+  async saveLocalEvent(input: SaveLocalEventInput): Promise<LocalEvent> {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do evento deve ter entre 2 e 120 caracteres.')
+    if (!isISODate(input.startDate)) throw new RepositoryError('Data inicial do evento inválida.')
+    const endDate = input.endDate ?? null
+    if (endDate !== null && (!isISODate(endDate) || endDate < input.startDate)) throw new RepositoryError('Data final do evento inválida.')
+    const s = this.read()
+    const event: LocalEvent = {
+      id: uid(),
+      name,
+      startDate: input.startDate,
+      endDate,
+      kind: input.kind ?? 'local',
+      createdAt: new Date().toISOString(),
+    }
+    s.localEvents = [...s.localEvents, event].sort((a, b) => a.startDate.localeCompare(b.startDate))
+    this.audit({ action: 'create', entity: 'local_event', entityId: event.id, summary: `Cadastrou o evento "${event.name}"` })
+    this.write()
+    return structuredClone(event)
+  }
+
   async reset(): Promise<CompanySnapshot> {
     this.state = fresh()
     this.audit({ action: 'reset', entity: 'company', entityId: this.state.company.id, summary: 'Reinicializou os dados de demonstração' })
     this.write()
-    return structuredClone(this.state)
+    return this.snapshot()
   }
 }
 
@@ -412,6 +656,18 @@ function describeChanges(a: Transaction, b: Transaction): string {
   ]
   const changed = fields.filter(([k]) => a[k] !== b[k]).map(([, l]) => l)
   return changed.length ? `Alterou ${changed.join(', ')} de "${b.description}"` : `Salvou "${b.description}" sem alterações`
+}
+
+function validateOptionalCents(value: Cents | null, label: string): Cents | null {
+  if (value === null) return null
+  if (!Number.isInteger(value) || value < 0) throw new RepositoryError(`O ${label} deve ser um valor em centavos, sem negativos.`)
+  return assertCents(value)
+}
+
+function validateOptionalQuantity(value: number | null, label: string): number | null {
+  if (value === null) return null
+  if (!Number.isInteger(value) || value < 0) throw new RepositoryError(`O ${label} deve ser informado em milésimos inteiros, sem negativos.`)
+  return value
 }
 
 function safeStorage(): Storage | null {

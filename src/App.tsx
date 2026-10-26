@@ -13,6 +13,7 @@ const AppShell = lazy(() => import('@/app/AppShell'))
 const Overview = lazy(() => import('@/features/overview/OverviewPage'))
 const Transactions = lazy(() => import('@/features/transactions/TransactionsPage'))
 const Cashflow = lazy(() => import('@/features/cashflow/CashflowPage'))
+const Products = lazy(() => import('@/features/products/ProductsPage'))
 const Intelligence = lazy(() => import('@/features/intelligence/IntelligencePage'))
 const Simulator = lazy(() => import('@/features/simulator/SimulatorPage'))
 const Reports = lazy(() => import('@/features/reports/ReportsPage'))
@@ -37,6 +38,7 @@ export function App() {
               <Route path="overview" element={<Overview />} />
               <Route path="movimentacoes" element={<Transactions />} />
               <Route path="fluxo-de-caixa" element={<Cashflow />} />
+              <Route path="produtos" element={<Products />} />
               <Route path="inteligencia" element={<Intelligence />} />
               <Route path="simulador" element={<Simulator />} />
               <Route path="relatorios" element={<Reports />} />

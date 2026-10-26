@@ -1,6 +1,7 @@
-import type { Account, Category, Company, Transaction, TxKind, TxStatus } from '@/domain/types'
+import type { Account, Category, Company, LocalEvent, Product, ProductSale, Transaction, TxKind, TxStatus } from '@/domain/types'
 import { addDays, addMonths, weekday, type ISODate } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
+import { revenueFor } from '@/domain/products/quantity'
 
 /**
  * Dados sintéticos do modo de demonstração.
@@ -56,7 +57,239 @@ export interface DemoDataset {
   accounts: Account[]
   categories: Category[]
   transactions: Transaction[]
+  products: Product[]
+  productSales: ProductSale[]
+  localEvents: LocalEvent[]
   anchor: ISODate
+}
+
+/** Mercadinho fictício de bairro: catálogo enxuto, com produtos fracionados e um parado. */
+interface ProductDef {
+  id: string
+  name: string
+  code: string
+  unit: string
+  price: Cents
+  cost: Cents | null
+  stock: number | null
+  stockDaysAgo: number
+  minStock: number | null
+  leadTimeDays: number | null
+  /** Quantidade-base por dia, em milésimos. */
+  baseQty: number
+  /** Para de vender N dias antes de hoje (demonstra produto parado). */
+  staleDays?: number
+}
+
+const PRODUCT_DEFS: ProductDef[] = [
+  {
+    id: 'p-arroz',
+    name: 'Arroz branco 5 kg',
+    code: 'ARZ5',
+    unit: 'un',
+    price: 2790,
+    cost: 2250,
+    stock: 18000,
+    stockDaysAgo: 10,
+    minStock: 12000,
+    leadTimeDays: 10,
+    baseQty: 3000,
+  },
+  {
+    id: 'p-feijao',
+    name: 'Feijão carioca 1 kg',
+    code: 'FEJ1',
+    unit: 'un',
+    price: 890,
+    cost: 690,
+    stock: 35000,
+    stockDaysAgo: 10,
+    minStock: 10000,
+    leadTimeDays: 12,
+    baseQty: 4000,
+  },
+  {
+    id: 'p-farinha',
+    name: "Farinha d'água 1 kg",
+    code: 'FAR1',
+    unit: 'un',
+    price: 750,
+    cost: 520,
+    stock: 20000,
+    stockDaysAgo: 20,
+    minStock: 8000,
+    leadTimeDays: 7,
+    baseQty: 3500,
+    staleDays: 35,
+  },
+  {
+    id: 'p-acucar',
+    name: 'Açúcar refinado 1 kg',
+    code: 'ACU1',
+    unit: 'un',
+    price: 560,
+    cost: 420,
+    stock: 28000,
+    stockDaysAgo: 8,
+    minStock: 10000,
+    leadTimeDays: 8,
+    baseQty: 3000,
+  },
+  {
+    id: 'p-cafe',
+    name: 'Café torrado 500 g',
+    code: 'CAF5',
+    unit: 'un',
+    price: 1890,
+    cost: 1450,
+    stock: 18000,
+    stockDaysAgo: 9,
+    minStock: 6000,
+    leadTimeDays: 12,
+    baseQty: 2000,
+  },
+  {
+    id: 'p-oleo',
+    name: 'Óleo de soja 900 ml',
+    code: 'OLE9',
+    unit: 'un',
+    price: 790,
+    cost: 620,
+    stock: 24000,
+    stockDaysAgo: 12,
+    minStock: 8000,
+    leadTimeDays: 8,
+    baseQty: 2500,
+  },
+  {
+    id: 'p-frango',
+    name: 'Frango congelado',
+    code: 'FRG1',
+    unit: 'kg',
+    price: 1690,
+    cost: 1290,
+    stock: 15000,
+    stockDaysAgo: 6,
+    minStock: 5000,
+    leadTimeDays: 5,
+    baseQty: 1800,
+  },
+  {
+    id: 'p-refri',
+    name: 'Refrigerante 2 l',
+    code: 'REF2',
+    unit: 'un',
+    price: 899,
+    cost: 650,
+    stock: 36000,
+    stockDaysAgo: 7,
+    minStock: 12000,
+    leadTimeDays: 7,
+    baseQty: 3000,
+  },
+  {
+    id: 'p-cerveja',
+    name: 'Cerveja lata 350 ml',
+    code: 'CER3',
+    unit: 'un',
+    price: 450,
+    cost: 320,
+    stock: 72000,
+    stockDaysAgo: 5,
+    minStock: 24000,
+    leadTimeDays: 10,
+    baseQty: 5000,
+  },
+  {
+    id: 'p-sabao',
+    name: 'Sabão em pó 1 kg',
+    code: 'SAB1',
+    unit: 'un',
+    price: 1290,
+    cost: 980,
+    stock: 15000,
+    stockDaysAgo: 11,
+    minStock: 5000,
+    leadTimeDays: 12,
+    baseQty: 1200,
+  },
+  {
+    id: 'p-pao',
+    name: 'Pão francês',
+    code: 'PAO1',
+    unit: 'kg',
+    price: 1890,
+    cost: null,
+    stock: 8000,
+    stockDaysAgo: 1,
+    minStock: 3000,
+    leadTimeDays: 1,
+    baseQty: 2500,
+  },
+  {
+    id: 'p-carvao',
+    name: 'Carvão 3 kg',
+    code: 'CRV3',
+    unit: 'un',
+    price: 1250,
+    cost: 900,
+    stock: null,
+    stockDaysAgo: 30,
+    minStock: null,
+    leadTimeDays: null,
+    baseQty: 600,
+    staleDays: 32,
+  },
+]
+
+/** Catálogo e histórico de vendas do mercadinho, relativo à data de referência. */
+export function buildProductDataset(today: ISODate): { products: Product[]; productSales: ProductSale[]; localEvents: LocalEvent[] } {
+  const rand = rng(20260202)
+  const products: Product[] = PRODUCT_DEFS.map((d) => ({
+    id: d.id,
+    name: d.name,
+    code: d.code,
+    unit: d.unit,
+    costPrice: d.cost,
+    stock: d.stock,
+    stockUpdatedAt: d.stock === null ? null : addDays(today, -d.stockDaysAgo),
+    minStock: d.minStock,
+    leadTimeDays: d.leadTimeDays,
+    createdAt: `${addDays(today, -182)}T09:00:00-03:00`,
+    updatedAt: `${addDays(today, -d.stockDaysAgo)}T09:00:00-03:00`,
+  }))
+  const createdAt = `${today}T18:00:00-03:00`
+  const productSales: ProductSale[] = []
+  for (let i = 0; i < 180; i++) {
+    const date = addDays(today, -i)
+    const day = Number(date.slice(8, 10))
+    const month = Number(date.slice(5, 7))
+    const dow = weekday(date)
+    const monthStart = day <= 10 ? 1.45 : 1
+    const june = month === 6 ? 1.35 : 1
+    const weekend = dow === 0 ? 0.55 : dow === 6 ? 1.25 : 1
+    for (const d of PRODUCT_DEFS) {
+      const staleBefore = d.staleDays === undefined ? null : addDays(today, -d.staleDays)
+      if (staleBefore && date > staleBefore) continue
+      if (rand() < 0.12) continue
+      const jitter = 0.82 + rand() * 0.36
+      const raw = d.baseQty * monthStart * june * weekend * jitter
+      const step = d.unit === 'kg' ? 100 : 1000
+      const quantity = Math.max(step, Math.round(raw / step) * step)
+      productSales.push({
+        id: `ps-${d.id}-${date}`,
+        productId: d.id,
+        saleDate: date,
+        quantity,
+        revenue: revenueFor(quantity, d.price),
+        unitCost: d.cost,
+        sourceRef: `demo:prodsale:${d.id}:${date}`,
+        createdAt,
+      })
+    }
+  }
+  productSales.sort((a, b) => a.saleDate.localeCompare(b.saleDate) || a.productId.localeCompare(b.productId))
+  return { products, productSales, localEvents: [] }
 }
 
 export function buildDemoDataset(today: ISODate): DemoDataset {
@@ -338,5 +571,5 @@ export function buildDemoDataset(today: ISODate): DemoDataset {
     }
   }
 
-  return { company: DEMO_COMPANY, accounts, categories: DEMO_CATEGORIES, transactions: txs, anchor: today }
+  return { company: DEMO_COMPANY, accounts, categories: DEMO_CATEGORIES, transactions: txs, ...buildProductDataset(today), anchor: today }
 }

@@ -1,6 +1,8 @@
 import { DemoRepository } from './demoRepository'
+import type { FinanceRepository } from './repository'
 import { validateTransaction, emptyInput } from '@/domain/transactions'
 import { accountBalances } from '@/domain/finance/metrics'
+import { addDays, todayIn } from '@/lib/dates'
 
 class MemoryStorage implements Storage {
   private m = new Map<string, string>()
@@ -61,6 +63,8 @@ describe('repositório de demonstração', () => {
     const snap = await repo.load()
     snap.transactions.length = 0
     expect((await repo.load()).transactions.length).toBeGreaterThan(0)
+    expect(snap).not.toHaveProperty('productSales')
+    expect(snap).not.toHaveProperty('members')
   })
 
   it('gera análise local por agente sem provedor externo', async () => {
@@ -275,5 +279,208 @@ describe('validação de lançamentos', () => {
   })
   it('datas inválidas', () => {
     expect(errs({ dueDate: '2026-02-30' }).dueDate).toBeTruthy()
+  })
+})
+
+describe('produtos no repositório de demonstração', () => {
+  it('semeia catálogo e histórico de vendas por item', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    expect(snap.products.length).toBeGreaterThanOrEqual(10)
+    expect(snap.products.some((p) => p.unit === 'kg')).toBe(true)
+    const sales = await repo.listProductSales(addDays(snap.anchor, -29), snap.anchor)
+    expect(sales.length).toBeGreaterThan(50)
+    expect(sales.every((s) => s.saleDate >= addDays(snap.anchor, -29) && s.saleDate <= snap.anchor)).toBe(true)
+    expect([...sales].sort((a, b) => a.saleDate.localeCompare(b.saleDate))).toEqual(sales)
+  })
+
+  it('cria e edita produto com validação e persistência', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    const product = await repo.saveProduct({
+      name: '  Manteiga de garrafa  ',
+      code: 'MAN1',
+      unit: 'un',
+      costPrice: 1890,
+      stock: 6000,
+      stockUpdatedAt: null,
+      minStock: 2000,
+      leadTimeDays: 7,
+    })
+    expect(product.name).toBe('Manteiga de garrafa')
+    expect(product.stockUpdatedAt).toBeTruthy()
+    const updated = await repo.saveProduct({ ...product, id: product.id, name: 'Manteiga de garrafa 500 ml', stock: 7000 })
+    expect(updated.name).toBe('Manteiga de garrafa 500 ml')
+    expect(updated.stock).toBe(7000)
+    const after = await new DemoRepository(storage).load()
+    expect(after.products.find((p) => p.id === product.id)?.name).toBe('Manteiga de garrafa 500 ml')
+    await expect(repo.saveProduct({ ...product, id: undefined, name: 'manteiga de garrafa 500 ml' })).rejects.toThrow(/Já existe/)
+    await expect(repo.saveProduct({ ...product, id: 'nao-existe' })).rejects.toThrow(/não encontrado/)
+    await expect(repo.saveProduct({ ...product, id: undefined, name: 'X' })).rejects.toThrow(/2 e 120/)
+    await expect(repo.saveProduct({ ...product, id: undefined, name: 'Outro', costPrice: -1 })).rejects.toThrow(/custo/)
+    await expect(repo.saveProduct({ ...product, id: undefined, name: 'Outro 2', stock: 1.5 })).rejects.toThrow(/milésimos/)
+    await expect(repo.saveProduct({ ...product, stockUpdatedAt: addDays(todayIn(), 1) })).rejects.toThrow(/futuro/)
+  })
+
+  it('consulta sourceRef existentes sem depender da janela carregada', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    await repo.importProductSales(
+      [
+        {
+          productName: 'Venda antiga',
+          productCode: null,
+          productId: null,
+          saleDate: addDays(snap.anchor, -400),
+          quantity: 1000,
+          revenue: 1000,
+          unitCost: null,
+          stock: null,
+          sourceRef: 'teste:antiga',
+        },
+      ],
+      { fileName: 'antigas.csv', fileHash: 'c'.repeat(64), totalRows: 1, imported: 1, skipped: 0, errors: 0, warnings: 0 },
+    )
+    expect(await repo.existingProductSaleRefs(['teste:antiga', 'teste:inexistente'])).toEqual(['teste:antiga'])
+    expect(await repo.existingProductSaleRefs([])).toEqual([])
+  })
+
+  it('importa vendas, cria produto novo, atualiza estoque/custo e evita duplicidade', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    const existing = snap.products.find((p) => p.id === 'p-arroz')!
+    const before = await repo.listProductSales(addDays(snap.anchor, -40), snap.anchor)
+    const record = await repo.importProductSales(
+      [
+        {
+          productName: 'Café novo 500 g',
+          productCode: 'CAF9',
+          productId: null,
+          saleDate: snap.anchor,
+          quantity: 2000,
+          revenue: 3780,
+          unitCost: 1450,
+          stock: 5000,
+          sourceRef: 'teste:produto:1',
+        },
+        {
+          productName: existing.name,
+          productCode: existing.code ?? null,
+          productId: existing.id,
+          saleDate: snap.anchor,
+          quantity: 3000,
+          revenue: 8370,
+          unitCost: 2300,
+          stock: 12000,
+          sourceRef: 'teste:produto:2',
+        },
+      ],
+      { fileName: 'vendas.csv', fileHash: 'b'.repeat(64), totalRows: 2, imported: 2, skipped: 0, errors: 0, warnings: 0 },
+    )
+    expect(record.imported).toBe(2)
+    const after = await repo.load()
+    const created = after.products.find((p) => p.name === 'Café novo 500 g')!
+    expect(created).toMatchObject({ stock: 5000, stockUpdatedAt: snap.anchor, costPrice: 1450 })
+    expect(after.products.find((p) => p.id === existing.id)?.costPrice).toBe(2300)
+    const sales = await repo.listProductSales(addDays(snap.anchor, -40), snap.anchor)
+    expect(sales.length).toBe(before.length + 2)
+    expect(after.audit[0]).toMatchObject({ entity: 'import', action: 'import' })
+    await expect(
+      repo.importProductSales(
+        [
+          {
+            productName: existing.name,
+            productCode: existing.code ?? null,
+            productId: existing.id,
+            saleDate: snap.anchor,
+            quantity: 1000,
+            revenue: 2790,
+            unitCost: null,
+            stock: null,
+            sourceRef: 'teste:produto:1',
+          },
+        ],
+        { fileName: 'vendas.csv', fileHash: 'b'.repeat(64), totalRows: 1, imported: 1, skipped: 0, errors: 0, warnings: 0 },
+      ),
+    ).rejects.toThrow(/mesma origem/)
+  })
+
+  it('grava o custo da venda mais recente do lote, sem regredir em importações antigas', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    const meta = { fileName: 'custos.csv', fileHash: 'd'.repeat(64), totalRows: 2, imported: 2, skipped: 0, errors: 0, warnings: 0 }
+    const importar = (rows: Parameters<FinanceRepository['importProductSales']>[0]) => repo.importProductSales(rows, meta)
+
+    await importar([
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -1),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 3000,
+        stock: null,
+        sourceRef: 'teste:custo:1',
+      },
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -10),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 1000,
+        stock: null,
+        sourceRef: 'teste:custo:2',
+      },
+    ])
+    const criado = (await repo.load()).products.find((p) => p.name === 'Custo mais recente')!
+    expect(criado.costPrice).toBe(3000)
+
+    await importar([
+      {
+        productName: 'Custo mais recente',
+        productCode: null,
+        productId: null,
+        saleDate: addDays(snap.anchor, -20),
+        quantity: 1000,
+        revenue: 5000,
+        unitCost: 500,
+        stock: null,
+        sourceRef: 'teste:custo:3',
+      },
+    ])
+    expect((await repo.load()).products.find((p) => p.id === criado.id)?.costPrice).toBe(3000)
+  })
+
+  it('cadastra evento local e rejeita datas inválidas', async () => {
+    const repo = new DemoRepository(new MemoryStorage())
+    const snap = await repo.load()
+    const event = await repo.saveLocalEvent({
+      name: '  Feira da praça  ',
+      startDate: addDays(snap.anchor, 10),
+      endDate: addDays(snap.anchor, 12),
+      kind: 'local',
+    })
+    expect(event.name).toBe('Feira da praça')
+    expect((await repo.load()).localEvents).toHaveLength(1)
+    await expect(repo.saveLocalEvent({ name: 'X', startDate: snap.anchor })).rejects.toThrow(/2 e 120/)
+    await expect(repo.saveLocalEvent({ name: 'Festa', startDate: snap.anchor, endDate: addDays(snap.anchor, -1) })).rejects.toThrow(/Data final/)
+    expect((await repo.load()).audit[0]).toMatchObject({ entity: 'local_event', action: 'create' })
+  })
+
+  it('migra estado antigo sem produtos e sem eventos', async () => {
+    const storage = new MemoryStorage()
+    const repo = new DemoRepository(storage)
+    await repo.reset()
+    const raw = JSON.parse(storage.getItem('nexo.demo.v1')!)
+    delete raw.products
+    delete raw.productSales
+    delete raw.localEvents
+    storage.setItem('nexo.demo.v1', JSON.stringify(raw))
+    const loaded = await new DemoRepository(storage).load()
+    expect(loaded.products.length).toBeGreaterThan(0)
+    expect(loaded.localEvents).toEqual([])
   })
 })

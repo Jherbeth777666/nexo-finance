@@ -1,11 +1,25 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Account, AlertState, AuditEntry, Category, Company, CompanyInvite, CompanyMember, InviteRole, MemberRole, Transaction } from '@/domain/types'
+import type {
+  Account,
+  AlertState,
+  AuditEntry,
+  Category,
+  Company,
+  CompanyInvite,
+  CompanyMember,
+  InviteRole,
+  LocalEvent,
+  MemberRole,
+  Product,
+  ProductSale,
+  Transaction,
+} from '@/domain/types'
 import { DEFAULT_ALERT_CONFIG, type AlertConfig } from '@/domain/finance/alerts'
 import type { AccountBalance, MonthPoint } from '@/domain/finance/metrics'
 import { CONSERVATIVE_SCENARIO, type ScenarioAssumptions } from '@/domain/finance/projection'
 import { validateCompanyName, validateInviteEmail, validateInviteRole, validateOpeningBalance } from '@/domain/company'
 import type { ValidTransaction } from '@/domain/transactions'
-import { addDays, todayIn } from '@/lib/dates'
+import { addDays, isISODate, todayIn } from '@/lib/dates'
 import type { Cents } from '@/lib/money'
 import {
   RepositoryError,
@@ -15,9 +29,31 @@ import {
   type CreateInviteInput,
   type FinanceRepository,
   type ImportRecord,
+  type SaveLocalEventInput,
+  type SaveProductInput,
   type SavedScenario,
 } from './repository'
-import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTransaction, transactionToRow, type TxRow } from './supabaseMapping'
+import {
+  LOCAL_EVENT_COLUMNS,
+  PRODUCT_COLUMNS,
+  PRODUCT_SALE_COLUMNS,
+  TX_COLUMNS,
+  centsToNumeric,
+  friendlyDbError,
+  numericToCents,
+  productSaleToRpcRow,
+  productToRow,
+  rowToLocalEvent,
+  rowToProduct,
+  rowToProductSale,
+  rowToTransaction,
+  transactionToRow,
+  type LocalEventRow,
+  type ProductRow,
+  type ProductSaleRow,
+  type TxRow,
+} from './supabaseMapping'
+import type { NewProductSale } from '@/domain/products/mapping'
 
 /**
  * Repositório de dados reais. Cada instância é presa a UMA empresa; mesmo assim, toda consulta
@@ -25,6 +61,7 @@ import { TX_COLUMNS, centsToNumeric, friendlyDbError, numericToCents, rowToTrans
  * tudo após cada operação (sem recarregar a página).
  */
 const PAGE = 1000
+const REF_BATCH = 200
 const DEFAULT_CUSTOM: ScenarioAssumptions = { ...CONSERVATIVE_SCENARIO, id: 'custom', receivableDelayDays: 14, receivableHaircutPct: 0 }
 
 type DbError = { code?: string; message?: string } | null
@@ -93,11 +130,13 @@ export class SupabaseRepository implements FinanceRepository {
 
   private async fetchAll(): Promise<CompanySnapshot> {
     const c = this.companyId
-    const [company, accounts, categories, transactions, alerts, settings, imports, scenarios, audit] = await Promise.all([
+    const [company, accounts, categories, transactions, products, localEvents, alerts, settings, imports, scenarios, audit] = await Promise.all([
       this.sb.from('companies').select('id,name,timezone,currency').eq('id', c).single(),
       this.sb.from('accounts').select('id,name,opening_balance,opening_date').eq('company_id', c).order('created_at'),
       this.sb.from('categories').select('id,name,kind,fixed').eq('company_id', c).order('name'),
       this.fetchTransactions(),
+      this.sb.from('products').select(PRODUCT_COLUMNS).eq('company_id', c).order('name'),
+      this.sb.from('local_events').select(LOCAL_EVENT_COLUMNS).eq('company_id', c).order('start_date'),
       this.sb.from('alert_states').select('fingerprint,state,note,updated_at').eq('company_id', c),
       this.sb.from('company_settings').select('alert_config,custom_scenario').eq('company_id', c).maybeSingle(),
       this.sb
@@ -126,6 +165,8 @@ export class SupabaseRepository implements FinanceRepository {
       })),
       categories: check(categories) as Category[],
       transactions,
+      products: (check(products) as unknown as ProductRow[]).map(rowToProduct),
+      localEvents: (check(localEvents) as unknown as LocalEventRow[]).map(rowToLocalEvent),
       alertStatus: Object.fromEntries(
         (check(alerts) as { fingerprint: string; state: AlertState; note: string | null; updated_at: string }[]).map((a) => [
           a.fingerprint,
@@ -248,6 +289,130 @@ export class SupabaseRepository implements FinanceRepository {
     const rec = this.cache.imports.find((i) => i.id === importId)
     if (!rec) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
     return rec
+  }
+
+  async listProductSales(from: string, to: string): Promise<ProductSale[]> {
+    const out: ProductSale[] = []
+    for (let offset = 0; ; offset += PAGE) {
+      const rows = check(
+        await this.sb
+          .from('product_sales')
+          .select(PRODUCT_SALE_COLUMNS)
+          .eq('company_id', this.companyId)
+          .gte('sale_date', from)
+          .lte('sale_date', to)
+          .order('sale_date')
+          .order('id')
+          .range(offset, offset + PAGE - 1),
+      ) as unknown as ProductSaleRow[]
+      out.push(...rows.map(rowToProductSale))
+      if (rows.length < PAGE) return out
+    }
+  }
+
+  async existingProductSaleRefs(sourceRefs: string[]): Promise<string[]> {
+    const unique = [...new Set(sourceRefs.filter(Boolean))]
+    const found = new Set<string>()
+    for (let i = 0; i < unique.length; i += REF_BATCH) {
+      const batch = unique.slice(i, i + REF_BATCH)
+      const rows = check(await this.sb.from('product_sales').select('source_ref').eq('company_id', this.companyId).in('source_ref', batch)) as unknown as {
+        source_ref: string | null
+      }[]
+      for (const row of rows) if (row.source_ref) found.add(row.source_ref)
+    }
+    return unique.filter((ref) => found.has(ref))
+  }
+
+  async saveProduct(input: SaveProductInput): Promise<Product> {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do produto deve ter entre 2 e 120 caracteres.')
+    if (input.costPrice !== null && (!Number.isInteger(input.costPrice) || input.costPrice < 0)) throw new RepositoryError('Custo inválido.')
+    if (input.stock !== null && (!Number.isInteger(input.stock) || input.stock < 0)) throw new RepositoryError('Estoque inválido.')
+    if (input.minStock !== null && (!Number.isInteger(input.minStock) || input.minStock < 0)) throw new RepositoryError('Estoque mínimo inválido.')
+    if (input.stock !== null && input.stockUpdatedAt !== undefined && input.stockUpdatedAt !== null && !isISODate(input.stockUpdatedAt)) {
+      throw new RepositoryError('Data do estoque inválida.')
+    }
+    const today = todayIn((await this.state()).company.timezone)
+    if (input.stock !== null && input.stockUpdatedAt && isISODate(input.stockUpdatedAt) && input.stockUpdatedAt > today) {
+      throw new RepositoryError('A data do estoque não pode estar no futuro.')
+    }
+    // Só colunas editáveis: company_id vai apenas no INSERT, nunca no UPDATE.
+    const row = productToRow({
+      ...input,
+      stockUpdatedAt: input.stock === null ? null : (input.stockUpdatedAt ?? today),
+    })
+    const s = await this.state()
+    if (input.id) {
+      const rows = check(
+        await this.sb.from('products').update(row).eq('id', input.id).eq('company_id', this.companyId).select(PRODUCT_COLUMNS),
+      ) as unknown as ProductRow[]
+      if (!rows.length) throw new RepositoryError('Produto não encontrado ou sem permissão para editar.')
+      const product = rowToProduct(rows[0])
+      s.products = s.products.map((p) => (p.id === product.id ? product : p))
+      await this.refreshAudit()
+      return product
+    }
+    const data = check(
+      await this.sb
+        .from('products')
+        .insert({ ...row, company_id: this.companyId })
+        .select(PRODUCT_COLUMNS)
+        .single(),
+    ) as unknown as ProductRow
+    const product = rowToProduct(data)
+    s.products = [...s.products, product].sort((a, b) => a.name.localeCompare(b.name))
+    await this.refreshAudit()
+    return product
+  }
+
+  async importProductSales(rows: NewProductSale[], meta: Omit<ImportRecord, 'id' | 'at' | 'actor'>): Promise<ImportRecord> {
+    if (!rows.length) throw new RepositoryError('Nenhuma venda válida para importar.')
+    const { data, error } = await this.sb.rpc('import_product_sales', {
+      p_company: this.companyId,
+      p_file_name: meta.fileName,
+      p_file_hash: meta.fileHash,
+      p_stats: {
+        total_rows: meta.totalRows,
+        skipped: meta.skipped,
+        errors: meta.errors,
+        warnings: meta.warnings,
+      },
+      p_rows: rows.map(productSaleToRpcRow),
+    })
+    if (error) throw new RepositoryError(friendlyDbError(error))
+    const importId = typeof data === 'string' ? data : (data as { import_id?: unknown } | null)?.import_id
+    if (typeof importId !== 'string' || !importId) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
+    this.cache = await this.fetchAll()
+    const record = this.cache.imports.find((i) => i.id === importId)
+    if (!record) throw new RepositoryError('Importação concluída, mas o registro não foi encontrado.')
+    return record
+  }
+
+  async saveLocalEvent(input: SaveLocalEventInput): Promise<LocalEvent> {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 120) throw new RepositoryError('O nome do evento deve ter entre 2 e 120 caracteres.')
+    if (!isISODate(input.startDate)) throw new RepositoryError('Data inicial do evento inválida.')
+    if (input.endDate !== null && input.endDate !== undefined && (!isISODate(input.endDate) || input.endDate < input.startDate)) {
+      throw new RepositoryError('Data final do evento inválida.')
+    }
+    const data = check(
+      await this.sb
+        .from('local_events')
+        .insert({
+          company_id: this.companyId,
+          name,
+          start_date: input.startDate,
+          end_date: input.endDate ?? null,
+          kind: input.kind ?? 'local',
+        })
+        .select(LOCAL_EVENT_COLUMNS)
+        .single(),
+    ) as unknown as LocalEventRow
+    const event = rowToLocalEvent(data)
+    const s = await this.state()
+    s.localEvents = [...s.localEvents, event].sort((a, b) => a.startDate.localeCompare(b.startDate))
+    await this.refreshAudit()
+    return event
   }
 
   async getAccountBalances(asOf: string): Promise<AccountBalance[]> {

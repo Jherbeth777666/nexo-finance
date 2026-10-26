@@ -1,5 +1,6 @@
 import type { Cents } from '@/lib/money'
 import type { ISODate } from '@/lib/dates'
+import type { MilliQty } from '@/domain/products/quantity'
 
 /**
  * Modelo de domínio. Espelha o esquema planejado para o PostgreSQL (docs/ARQUITETURA.md).
@@ -131,6 +132,53 @@ export interface FinancialAlert {
   transactionIds: string[]
   /** Quando os dados não permitem conclusão. */
   limitation?: string
+}
+
+/**
+ * Produto do catálogo do comerciante. Valores monetários em centavos e quantidades em milésimos
+ * (1,250 kg = 1250), nunca floats. Custo, estoque e mínimo podem ser desconhecidos (null).
+ */
+export interface Product {
+  id: string
+  name: string
+  /** Código do PDV/fornecedor; usado para casar linhas de planilhas antes do nome. */
+  code?: string | null
+  /** Unidade de venda exibida ao lado da quantidade: un, kg, l, etc. */
+  unit: string
+  costPrice: Cents | null
+  stock: MilliQty | null
+  /** Data em que o estoque informado foi contado; vendas posteriores são descontadas. */
+  stockUpdatedAt: ISODate | null
+  minStock: MilliQty | null
+  leadTimeDays: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Venda de um item, importada do PDV/planilha. Receita e custo unitário em centavos. */
+export interface ProductSale {
+  id: string
+  productId: string
+  saleDate: ISODate
+  quantity: MilliQty
+  revenue: Cents
+  /** Custo unitário no momento da venda, quando a planilha informa. */
+  unitCost: Cents | null
+  sourceRef?: string
+  importId?: string
+  createdAt: string
+}
+
+export type LocalEventKind = 'regional' | 'national' | 'local'
+
+/** Evento do calendário local cadastrado pelo comerciante (festa, feira, pagamento). */
+export interface LocalEvent {
+  id: string
+  name: string
+  startDate: ISODate
+  endDate: ISODate | null
+  kind: LocalEventKind
+  createdAt: string
 }
 
 export interface AlertStatusRecord {

@@ -1,6 +1,9 @@
-import type { Transaction } from '@/domain/types'
+import type { LocalEvent, Product, ProductSale, Transaction } from '@/domain/types'
 import type { ValidTransaction } from '@/domain/transactions'
 import type { Cents } from '@/lib/money'
+import { milliToNumeric, numericToMilli } from '@/domain/products/quantity'
+import type { NewProductSale } from '@/domain/products/mapping'
+import type { SaveProductInput } from './repository'
 
 /** Conversões entre o banco (NUMERIC em reais, snake_case) e o domínio (centavos, camelCase). */
 
@@ -98,7 +101,7 @@ export function friendlyDbError(e: { code?: string; message?: string } | null | 
     case '42501':
       return 'Você não tem permissão para esta ação nesta empresa.'
     case '23505':
-      return 'Registro duplicado: já existe um lançamento com esta origem.'
+      return 'Registro duplicado: já existe um registro com estes dados.'
     case '23503':
       return 'Conta ou categoria inválida para esta empresa.'
     case '23514':
@@ -111,5 +114,118 @@ export function friendlyDbError(e: { code?: string; message?: string } | null | 
       return 'Sua sessão expirou. Entre novamente.'
     default:
       return 'Não foi possível concluir a operação. Tente novamente.'
+  }
+}
+
+export interface ProductRow {
+  id: string
+  company_id: string
+  name: string
+  code: string | null
+  unit: string
+  cost_price: string | number | null
+  stock: string | number | null
+  stock_updated_at: string | null
+  min_stock: string | number | null
+  lead_time_days: number | null
+  created_at: string
+  updated_at: string
+}
+
+export const PRODUCT_COLUMNS = 'id,company_id,name,code,unit,cost_price,stock,stock_updated_at,min_stock,lead_time_days,created_at,updated_at'
+
+export function rowToProduct(r: ProductRow): Product {
+  return {
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    unit: r.unit,
+    costPrice: r.cost_price === null ? null : numericToCents(r.cost_price),
+    stock: r.stock === null ? null : numericToMilli(r.stock),
+    stockUpdatedAt: r.stock_updated_at,
+    minStock: r.min_stock === null ? null : numericToMilli(r.min_stock),
+    leadTimeDays: r.lead_time_days,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+export function productToRow(input: SaveProductInput) {
+  return {
+    name: input.name.trim(),
+    code: input.code?.trim() || null,
+    unit: (input.unit ?? 'un').trim() || 'un',
+    cost_price: input.costPrice === null ? null : centsToNumeric(input.costPrice),
+    stock: input.stock === null ? null : milliToNumeric(input.stock),
+    stock_updated_at: input.stock === null ? null : (input.stockUpdatedAt ?? null),
+    min_stock: input.minStock === null ? null : milliToNumeric(input.minStock),
+    lead_time_days: input.leadTimeDays,
+  }
+}
+
+export interface ProductSaleRow {
+  id: string
+  company_id: string
+  product_id: string
+  sale_date: string
+  quantity: string | number
+  revenue: string | number
+  unit_cost: string | number | null
+  source_ref: string | null
+  import_id: string | null
+  created_at: string
+}
+
+export const PRODUCT_SALE_COLUMNS = 'id,company_id,product_id,sale_date,quantity,revenue,unit_cost,source_ref,import_id,created_at'
+
+export function rowToProductSale(r: ProductSaleRow): ProductSale {
+  return {
+    id: r.id,
+    productId: r.product_id,
+    saleDate: r.sale_date,
+    quantity: numericToMilli(r.quantity),
+    revenue: numericToCents(r.revenue),
+    unitCost: r.unit_cost === null ? null : numericToCents(r.unit_cost),
+    sourceRef: r.source_ref ?? undefined,
+    importId: r.import_id ?? undefined,
+    createdAt: r.created_at,
+  }
+}
+
+/** Linhas enviadas à RPC de importação; o servidor resolve/cria o produto. */
+export function productSaleToRpcRow(s: NewProductSale) {
+  return {
+    product_name: s.productName,
+    product_code: s.productCode,
+    product_id: s.productId,
+    sale_date: s.saleDate,
+    quantity: milliToNumeric(s.quantity),
+    revenue: centsToNumeric(s.revenue),
+    unit_cost: s.unitCost === null ? null : centsToNumeric(s.unitCost),
+    stock: s.stock === null ? null : milliToNumeric(s.stock),
+    source_ref: s.sourceRef,
+  }
+}
+
+export interface LocalEventRow {
+  id: string
+  company_id: string
+  name: string
+  start_date: string
+  end_date: string | null
+  kind: LocalEvent['kind']
+  created_at: string
+}
+
+export const LOCAL_EVENT_COLUMNS = 'id,company_id,name,start_date,end_date,kind,created_at'
+
+export function rowToLocalEvent(r: LocalEventRow): LocalEvent {
+  return {
+    id: r.id,
+    name: r.name,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    kind: r.kind,
+    createdAt: r.created_at,
   }
 }
